@@ -26,13 +26,7 @@ const WEB_FEATURES = [
   { icon: FileText,    text: 'Instant FIR drafts, RTI applications, complaint letters' },
 ];
 
-// ── Mock Google accounts for sign-in simulation ──────────────────────────────
-const GOOGLE_ACCOUNTS = [
-  { name: 'Rohan Sharma',   email: 'rohan.sharma@gmail.com',   avatar: 'R', color: '#4285F4' },
-  { name: 'Priya Nair',     email: 'priya.nair@gmail.com',     avatar: 'P', color: '#34A853' },
-  { name: 'Meera Iyer',     email: 'meera.iyer@gmail.com',     avatar: 'M', color: '#EA4335' },
-  { name: 'Use another account', email: '', avatar: '+', color: '#9E9E9E' },
-];
+
 
 // ── Google Logo SVG-like using View primitives ────────────────────────────────
 function GoogleLogo({ size = 20 }: { size?: number }) {
@@ -45,17 +39,15 @@ function GoogleLogo({ size = 20 }: { size?: number }) {
 
 export default function PhoneAuthScreen() {
   const router = useRouter();
-  const { enableGuest, requestOtp, loginWithGoogle, isDarkMode, selectedLanguage } = useAppStore();
+  const { enableGuest, requestOtp, isDarkMode, selectedLanguage } = useAppStore();
   const { width } = useWindowDimensions();
   const C = isDarkMode ? Colors.dark : Colors.light;
   const t = UI_TRANSLATIONS[selectedLanguage.code] || UI_TRANSLATIONS['en-IN'];
 
-  const [phone, setPhone]                 = useState('');
-  const [isSending, setSending]           = useState(false);
-  const [error, setError]                 = useState<string | null>(null);
-  const [showGooglePicker, setGooglePicker] = useState(false);
-  const [isGoogleLoading, setGoogleLoading] = useState(false);
-  const [selectedGoogleIdx, setSelectedGoogleIdx] = useState<number | null>(null);
+  const [phone, setPhone]   = useState('');
+  const [isSending, setSending] = useState(false);
+  const [error, setError]   = useState<string | null>(null);
+  const [googleToast, setGoogleToast] = useState(false);
   const phoneRef = useRef<TextInput>(null);
 
   const isValid = /^[6-9]\d{9}$/.test(phone);
@@ -82,144 +74,28 @@ export default function PhoneAuthScreen() {
     router.replace('/(tabs)' as any);
   };
 
-  const handleGoogleAccountSelect = async (idx: number) => {
-    const acct = GOOGLE_ACCOUNTS[idx];
-    if (!acct.email) {
-      // "Use another account" — just dismiss and let them type phone
-      setGooglePicker(false);
-      return;
-    }
-    safeImpact(Haptics.ImpactFeedbackStyle.Medium);
-    setSelectedGoogleIdx(idx);
-    setGoogleLoading(true);
-
-    // Simulate network delay for realistic UX
-    await new Promise((r) => setTimeout(r, 1200));
-
-    await loginWithGoogle(acct.email, acct.name, acct.color);
-    setGoogleLoading(false);
-    setGooglePicker(false);
-    router.replace('/(tabs)' as any);
+  const handleGooglePress = () => {
+    safeImpact(Haptics.ImpactFeedbackStyle.Light);
+    setGoogleToast(true);
+    setTimeout(() => setGoogleToast(false), 2800);
   };
 
   const goToLanding = () => router.back();
 
-  // ── Google Account Picker Modal ───────────────────────────────────────────
-  const GooglePickerModal = () => (
-    <Modal
-      visible={showGooglePicker}
-      transparent
-      animationType="fade"
-      onRequestClose={() => setGooglePicker(false)}
-    >
-      <Pressable
-        style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center' }}
-        onPress={() => !isGoogleLoading && setGooglePicker(false)}
-      >
-        <Pressable onPress={() => {}}>
-          <View style={{
-            width: isWeb ? 360 : width * 0.9,
-            backgroundColor: isDarkMode ? '#18181B' : '#FFFFFF',
-            borderRadius: 20,
-            overflow: 'hidden',
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: 16 },
-            shadowOpacity: 0.25,
-            shadowRadius: 36,
-            elevation: 20,
-          }}>
-            {/* Header */}
-            <View style={{
-              padding: 20,
-              borderBottomWidth: 1,
-              borderBottomColor: isDarkMode ? '#2A2A2A' : '#F0F0F0',
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-            }}>
-              <View>
-                <Text style={{ fontSize: 16, fontFamily: 'PlusJakartaSans_700Bold', color: C.text }}>
-                  Choose an account
-                </Text>
-                <Text style={{ fontSize: 12, fontFamily: 'PlusJakartaSans_400Regular', color: C.textSecondary, marginTop: 2 }}>
-                  to continue to NeethiMitra AI
-                </Text>
-              </View>
-              {/* Google-coloured G */}
-              <View style={{
-                width: 38, height: 38, borderRadius: 10,
-                backgroundColor: '#FFFFFF',
-                alignItems: 'center', justifyContent: 'center',
-                borderWidth: 1, borderColor: '#E0E0E0',
-              }}>
-                <Text style={{ fontSize: 22, fontFamily: 'PlusJakartaSans_700Bold', color: '#4285F4' }}>G</Text>
-              </View>
-            </View>
-
-            {/* Account list */}
-            {GOOGLE_ACCOUNTS.map((acct, idx) => (
-              <TouchableOpacity
-                key={idx}
-                onPress={() => handleGoogleAccountSelect(idx)}
-                disabled={isGoogleLoading}
-                activeOpacity={0.75}
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  paddingHorizontal: 20,
-                  paddingVertical: 14,
-                  borderBottomWidth: idx < GOOGLE_ACCOUNTS.length - 1 ? 1 : 0,
-                  borderBottomColor: isDarkMode ? '#23232A' : '#F5F5F5',
-                  opacity: isGoogleLoading && selectedGoogleIdx !== idx ? 0.4 : 1,
-                }}
-              >
-                {/* Avatar */}
-                <View style={{
-                  width: 40, height: 40, borderRadius: 20,
-                  backgroundColor: acct.color,
-                  alignItems: 'center', justifyContent: 'center',
-                  marginRight: 14,
-                }}>
-                  {isGoogleLoading && selectedGoogleIdx === idx ? (
-                    <ActivityIndicator color="#FFFFFF" size="small" />
-                  ) : (
-                    <Text style={{ color: '#FFF', fontFamily: 'PlusJakartaSans_700Bold', fontSize: 16 }}>
-                      {acct.avatar}
-                    </Text>
-                  )}
-                </View>
-
-                {/* Info */}
-                <View style={{ flex: 1 }}>
-                  <Text style={{
-                    fontSize: 14, fontFamily: 'PlusJakartaSans_600SemiBold',
-                    color: acct.email ? C.text : C.textSecondary,
-                  }}>
-                    {acct.name}
-                  </Text>
-                  {acct.email ? (
-                    <Text style={{
-                      fontSize: 12, fontFamily: 'PlusJakartaSans_400Regular',
-                      color: C.textSecondary, marginTop: 1,
-                    }}>
-                      {acct.email}
-                    </Text>
-                  ) : null}
-                </View>
-              </TouchableOpacity>
-            ))}
-
-            {/* Footer */}
-            <View style={{ padding: 16, alignItems: 'center', flexDirection: 'row', justifyContent: 'flex-end', gap: 12 }}>
-              <TouchableOpacity onPress={() => setGooglePicker(false)} style={{ paddingHorizontal: 16, paddingVertical: 8 }}>
-                <Text style={{ fontSize: 13, color: '#4285F4', fontFamily: 'PlusJakartaSans_600SemiBold' }}>Cancel</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </Pressable>
-      </Pressable>
-    </Modal>
-  );
+  // ── Google Coming Soon Toast ──────────────────────────────────────────────
+  const GoogleComingSoon = () => googleToast ? (
+    <View style={{
+      position: 'absolute', top: isWeb ? 20 : 60, alignSelf: 'center',
+      backgroundColor: isDarkMode ? '#1E1E2E' : '#1F2937',
+      paddingHorizontal: 18, paddingVertical: 10,
+      borderRadius: 24, zIndex: 999,
+      shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 12, elevation: 8,
+    }}>
+      <Text style={{ color: '#FFF', fontSize: 13, fontFamily: 'PlusJakartaSans_500Medium' }}>
+        🔜 Google Sign-In coming soon. Please use OTP for now.
+      </Text>
+    </View>
+  ) : null;
 
   // ── Guest Limitations Card ────────────────────────────────────────────────
   const GuestLimitations = () => (
@@ -279,34 +155,27 @@ export default function PhoneAuthScreen() {
         {t.phoneAuthSub}
       </Text>
 
-      {/* ── Google Sign-In Button (Primary) ── */}
+      {/* ── Google Sign-In Button (Coming Soon) ── */}
       <TouchableOpacity
-        onPress={() => {
-          safeImpact(Haptics.ImpactFeedbackStyle.Light);
-          setGooglePicker(true);
-        }}
-        activeOpacity={0.88}
+        onPress={handleGooglePress}
+        activeOpacity={0.7}
         style={{
           height: 52, borderRadius: 14,
           flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
           gap: 10, marginBottom: 14,
-          backgroundColor: isDarkMode ? '#18181B' : '#FFFFFF',
+          backgroundColor: isDarkMode ? '#18181B' : '#F3F4F6',
           borderWidth: 1.5,
-          borderColor: isDarkMode ? '#374151' : '#D1D5DB',
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: 2 },
-          shadowOpacity: 0.06,
-          shadowRadius: 6,
-          elevation: 2,
+          borderColor: isDarkMode ? '#2A2A2A' : '#E5E7EB',
+          opacity: 0.65,
         }}
       >
-        <Text style={{ fontSize: 20, lineHeight: 24, fontFamily: 'PlusJakartaSans_700Bold', color: '#4285F4' }}>G</Text>
-        <Text style={{
-          fontSize: 15, fontFamily: 'PlusJakartaSans_600SemiBold',
-          color: C.text,
-        }}>
+        <Text style={{ fontSize: 20, lineHeight: 24, fontFamily: 'PlusJakartaSans_700Bold', color: '#9CA3AF' }}>G</Text>
+        <Text style={{ fontSize: 15, fontFamily: 'PlusJakartaSans_600SemiBold', color: C.textSecondary }}>
           {t.continueWithGoogle}
         </Text>
+        <View style={{ backgroundColor: '#F97316', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20 }}>
+          <Text style={{ fontSize: 9, fontFamily: 'PlusJakartaSans_700Bold', color: '#FFF', letterSpacing: 0.5 }}>SOON</Text>
+        </View>
       </TouchableOpacity>
 
       <Divider />
@@ -397,7 +266,7 @@ export default function PhoneAuthScreen() {
   if (isDesktop) {
     return (
       <View style={styles.desktopRoot}>
-        <GooglePickerModal />
+        <GoogleComingSoon />
         {/* Left branding panel */}
         <LinearGradient
           colors={['#0A3D1F', '#15803D', '#1A5C2A']}
@@ -453,7 +322,7 @@ export default function PhoneAuthScreen() {
   // ── Mobile layout ──────────────────────────────────────────────────────────
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: C.background }]}>
-      <GooglePickerModal />
+      <GoogleComingSoon />
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -470,31 +339,27 @@ export default function PhoneAuthScreen() {
           <Text style={[styles.title, { color: C.text }]}>{t.phoneAuthTitle}</Text>
           <Text style={[styles.sub, { color: C.textSecondary }]}>{t.phoneAuthSub}</Text>
 
-          {/* Google Sign-In */}
+          {/* Google Sign-In (Coming Soon) */}
           <TouchableOpacity
-            onPress={() => {
-              safeImpact(Haptics.ImpactFeedbackStyle.Light);
-              setGooglePicker(true);
-            }}
-            activeOpacity={0.88}
+            onPress={handleGooglePress}
+            activeOpacity={0.7}
             style={{
               height: 52, borderRadius: 14,
               flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
               gap: 10, marginBottom: 14,
-              backgroundColor: isDarkMode ? '#18181B' : '#FFFFFF',
+              backgroundColor: isDarkMode ? '#18181B' : '#F3F4F6',
               borderWidth: 1.5,
-              borderColor: isDarkMode ? '#374151' : '#D1D5DB',
-              shadowColor: '#000',
-              shadowOffset: { width: 0, height: 2 },
-              shadowOpacity: 0.06,
-              shadowRadius: 6,
-              elevation: 2,
+              borderColor: isDarkMode ? '#2A2A2A' : '#E5E7EB',
+              opacity: 0.65,
             }}
           >
-            <Text style={{ fontSize: 20, lineHeight: 24, fontFamily: 'PlusJakartaSans_700Bold', color: '#4285F4' }}>G</Text>
-            <Text style={{ fontSize: 15, fontFamily: 'PlusJakartaSans_600SemiBold', color: C.text }}>
+            <Text style={{ fontSize: 20, lineHeight: 24, fontFamily: 'PlusJakartaSans_700Bold', color: '#9CA3AF' }}>G</Text>
+            <Text style={{ fontSize: 15, fontFamily: 'PlusJakartaSans_600SemiBold', color: C.textSecondary }}>
               {t.continueWithGoogle}
             </Text>
+            <View style={{ backgroundColor: '#F97316', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20 }}>
+              <Text style={{ fontSize: 9, fontFamily: 'PlusJakartaSans_700Bold', color: '#FFF', letterSpacing: 0.5 }}>SOON</Text>
+            </View>
           </TouchableOpacity>
 
           {/* Divider */}

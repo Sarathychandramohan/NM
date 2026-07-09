@@ -442,6 +442,25 @@ def update_me(
     return current_user
 
 
+@router.patch("/me/avatar", response_model=FullUserResponse, summary="Update profile picture URL")
+def update_avatar(
+    payload: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_real_user),
+):
+    """
+    Update the authenticated user's profile picture.
+    Body: { "profile_image": "https://..." }
+    """
+    profile_image = payload.get("profile_image", "").strip()
+    if not profile_image:
+        raise HTTPException(status_code=400, detail="profile_image URL must not be empty.")
+    current_user.profile_image = profile_image
+    db.commit()
+    db.refresh(current_user)
+    return current_user
+
+
 @router.post("/guest/upgrade", response_model=GuestUpgradeResponse, summary="Upgrade guest to registered account")
 def upgrade_guest(
     payload: GuestUpgradeRequest,

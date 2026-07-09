@@ -1,9 +1,15 @@
 import os
+from typing import List
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
+from sqlalchemy.orm import Session as DBSession
 
 from app.config import settings
+from app.core.dependencies import get_current_user
+from app.database import get_db
+from app.models import Document, User
+from app.schemas import DocumentResponse
 
 router = APIRouter(tags=["files"])
 
@@ -16,6 +22,20 @@ def _safe_path(base_dir: str, filename: str) -> str:
     if not os.path.exists(path):
         raise HTTPException(status_code=404, detail="File not found")
     return path
+
+
+@router.get("/api/files", response_model=List[DocumentResponse], summary="List all documents uploaded by the current user")
+def list_user_files(
+    db: DBSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Returns all documents across all sessions belonging to the current user, newest first."""
+    return (
+        db.query(Document)
+        .filter(Document.user_id == current_user.id)
+        .order_by(Document.created_at.desc())
+        .all()
+    )
 
 
 @router.get("/static/audio/{filename:path}")

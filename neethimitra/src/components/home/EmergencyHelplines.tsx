@@ -56,7 +56,10 @@ export function EmergencyHelplines() {
     opacity: pulseOpacity.value,
   }));
 
+  const isWeb = Platform.OS === 'web';
+
   const handleCall = async (number: string) => {
+    if (isWeb) return;
     try {
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
       await Linking.openURL(`tel:${number}`);
@@ -77,8 +80,9 @@ export function EmergencyHelplines() {
           return (
             <TouchableOpacity
               key={line.id}
-              onPress={() => handleCall(line.number)}
-              activeOpacity={0.9}
+              onPress={isWeb ? undefined : () => handleCall(line.number)}
+              activeOpacity={isWeb ? 1 : 0.9}
+              disabled={isWeb}
               className="w-[48.5%] rounded-2xl overflow-hidden shadow-sm"
               style={{ elevation: 2 }}
             >
@@ -109,10 +113,12 @@ export function EmergencyHelplines() {
                   </Text>
                 </View>
 
-                {/* Arrow Indicator */}
-                <View className="bg-white/20 w-5 h-5 rounded-full items-center justify-center">
-                  <ArrowRight size={10} color="#FFFFFF" />
-                </View>
+                {/* Arrow Indicator - Hide on Web since it's a static box */}
+                {!isWeb && (
+                  <View className="bg-white/20 w-5 h-5 rounded-full items-center justify-center">
+                    <ArrowRight size={10} color="#FFFFFF" />
+                  </View>
+                )}
               </LinearGradient>
             </TouchableOpacity>
           );

@@ -1,0 +1,11 @@
+node_modules/
+neethimitra/node_modules/
+neethimitra-backend/venv/
+__pycache__/
+*.pyc
+.env
+.expo/
+dist/
+build/
+neethimitra-backend/alembic/__pycache__/
+*.db

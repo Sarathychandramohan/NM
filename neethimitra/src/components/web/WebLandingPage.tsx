@@ -1,0 +1,477 @@
+/**
+ * WebLandingPage.tsx — Premium public landing page (web-only)
+ * Shown to unauthenticated visitors. Mobile is unaffected.
+ */
+import React, { useEffect, useRef } from 'react';
+import {
+  View, Text, TouchableOpacity, ScrollView, StyleSheet,
+  Linking, Platform, Animated, useWindowDimensions,
+} from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useRouter } from 'expo-router';
+import { Logo } from '@/components/ui/Logo';
+import {
+  Mic, Globe, FileText, Phone, ShieldCheck, Scale, Home,
+  Briefcase, ShieldAlert, Heart, User, ChevronRight,
+  Star, CheckCircle, ArrowRight, Zap, Lock, BookOpen, MessageSquare,
+} from 'lucide-react-native';
+import { Colors } from '@constants/colors';
+import { CATEGORIES } from '@store/useAppStore';
+
+const FEATURES = [
+  {
+    Icon: Mic,
+    title: 'Voice in Your Language',
+    desc: 'Speak your legal problem in any of 22 Indian languages. Our AI understands dialects, accents, and local terms.',
+    color: '#E8580C',
+    bg: 'rgba(232,88,12,0.08)',
+  },
+  {
+    Icon: ShieldCheck,
+    title: 'Instant Legal Guidance',
+    desc: 'Powered by legal knowledge of Indian law — IPC, CPC, RTI Act, POCSO, domestic violence laws, and more.',
+    color: '#15803D',
+    bg: 'rgba(21,128,61,0.08)',
+  },
+  {
+    Icon: FileText,
+    title: 'Generate PDFs in Seconds',
+    desc: 'Auto-generate FIR drafts, RTI applications, complaint letters — ready to sign and submit to authorities.',
+    color: '#1D4ED8',
+    bg: 'rgba(29,78,216,0.08)',
+  },
+  {
+    Icon: Lock,
+    title: 'Private & Secure',
+    desc: 'Your queries and documents are encrypted. We never share your personal information with third parties.',
+    color: '#7C3AED',
+    bg: 'rgba(124,58,237,0.08)',
+  },
+  {
+    Icon: Phone,
+    title: 'Emergency Helplines',
+    desc: 'One-tap access to national emergency numbers: Cyber Fraud (1930), Domestic Violence (181), Senior Citizens (14567).',
+    color: '#DC2626',
+    bg: 'rgba(220,38,38,0.08)',
+  },
+  {
+    Icon: BookOpen,
+    title: 'Know Your Rights',
+    desc: 'Learn what rights you have as a citizen — from land ownership to consumer protection to government schemes.',
+    color: '#D97706',
+    bg: 'rgba(217,119,6,0.08)',
+  },
+];
+
+const STEPS = [
+  { n: '01', title: 'Describe Your Issue', desc: 'Type or speak your legal problem in any Indian language', color: '#E8580C' },
+  { n: '02', title: 'Get AI Guidance',     desc: 'Our legal AI analyses your situation and explains your rights', color: '#15803D' },
+  { n: '03', title: 'Take Action',         desc: 'Download documents, call helplines, or file a complaint', color: '#1D4ED8' },
+];
+
+const CATEGORY_META: Record<string, { label: string; hint: string; Icon: any; color: string }> = {
+  land:   { label: 'Land & Property',  hint: 'Encroachment, inheritance, title', Icon: Home,        color: '#78350F' },
+  police: { label: 'Police & FIR',     hint: 'Draft FIR, rights, complaints',    Icon: Briefcase,   color: '#1E3A5F' },
+  cyber:  { label: 'Cyber Fraud',      hint: 'UPI scam, OTP theft, fake jobs',   Icon: ShieldAlert, color: '#1D4ED8' },
+  health: { label: 'Health Rights',    hint: 'Negligence, insurance, bills',     Icon: Heart,       color: '#134E4A' },
+  family: { label: 'Women & Seniors',  hint: 'Domestic violence, maintenance',   Icon: User,        color: '#5C1A3A' },
+  rti:    { label: 'Govt Schemes',     hint: 'PM-KISAN, ration card, RTI',       Icon: Scale,       color: '#EA580C' },
+  general:{ label: 'General Legal Query', hint: "Ask any legal question if you're unsure which category it belongs to.", Icon: MessageSquare, color: '#0369A1' },
+};
+
+const TESTIMONIALS = [
+  { name: 'Lakshmi Devi', loc: 'Tamil Nadu', text: 'I was cheated by a contractor. NeethiMitra helped me draft an FIR in Tamil. I got justice in 2 months!', stars: 5 },
+  { name: 'Ramesh Yadav', loc: 'Uttar Pradesh', text: 'The RTI application it generated helped me claim my PM-KISAN amount that was stuck for 8 months.', stars: 5 },
+  { name: 'Priya Sharma', loc: 'Maharashtra', text: 'As a domestic violence survivor, this app helped me understand my rights under the PWDVA in Hindi.', stars: 5 },
+];
+
+export function WebLandingPage() {
+  const router = useRouter();
+  const { width } = useWindowDimensions();
+  const isMobile = width < 768;
+  const isTablet = width < 1024;
+
+  const heroAnim  = useRef(new Animated.Value(0)).current;
+  const heroSlide = useRef(new Animated.Value(30)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(heroAnim,  { toValue: 1, duration: 700, useNativeDriver: true }),
+      Animated.timing(heroSlide, { toValue: 0, duration: 700, useNativeDriver: true }),
+    ]).start();
+  }, []);
+
+  const goToLogin = () => router.push('/(auth)/phone-auth' as any);
+  const goToApp   = () => router.push('/(tabs)' as any);
+
+  return (
+    <ScrollView style={styles.root} showsVerticalScrollIndicator={false} stickyHeaderIndices={[0]}>
+
+      {/* ── TOP NAVBAR ──────────────────────────────────────────────────────── */}
+      <View style={styles.navbar}>
+        <View style={styles.navInner}>
+          <Logo size={32} showText lightBg stacked={false} />
+          <View style={styles.navLinks}>
+            {!isMobile && (
+              <>
+                <TouchableOpacity onPress={() => {}} style={styles.navLink}>
+                  <Text style={styles.navLinkText}>Features</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => {}} style={styles.navLink}>
+                  <Text style={styles.navLinkText}>How it Works</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => {}} style={styles.navLink}>
+                  <Text style={styles.navLinkText}>Categories</Text>
+                </TouchableOpacity>
+              </>
+            )}
+            <TouchableOpacity onPress={goToLogin} style={styles.navLoginBtn}>
+              <Text style={styles.navLoginText}>Log In</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={goToLogin} style={styles.navCtaBtn}>
+              <Text style={styles.navCtaText}>Get Started Free</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+
+      {/* ── HERO SECTION ─────────────────────────────────────────────────────── */}
+      <LinearGradient
+        colors={['#0A3D1F', '#15803D', '#1A5C2A']}
+        start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+        style={styles.hero}
+      >
+        {/* Decorative circles */}
+        <View style={[styles.heroBubble, { width: 500, height: 500, top: -150, right: -150, opacity: 0.06 }]} />
+        <View style={[styles.heroBubble, { width: 300, height: 300, bottom: -80, left: -60, opacity: 0.07 }]} />
+
+        <Animated.View style={[
+          styles.heroContent,
+          { opacity: heroAnim, transform: [{ translateY: heroSlide }] }
+        ]}>
+          {/* Badge */}
+          <View style={styles.heroBadge}>
+            <Zap size={13} color="#F97316" strokeWidth={2} />
+            <Text style={styles.heroBadgeText}>India's First Multilingual Legal AI</Text>
+          </View>
+
+          {/* Headline */}
+          <Text style={[styles.heroH1, { fontSize: isMobile ? 32 : isTablet ? 44 : 56 }]}>
+            Legal Help for{'\n'}
+            <Text style={{ color: '#F97316' }}>Every Indian</Text>
+            {'\n'}in Their Own Language
+          </Text>
+
+          <Text style={[styles.heroSub, { fontSize: isMobile ? 15 : 18 }]}>
+            Speak or type your legal problem in any of 22 Indian languages.{'\n'}
+            Get instant guidance, draft documents, and know your rights — free.
+          </Text>
+
+          {/* CTA Row */}
+          <View style={[styles.heroCtaRow, { flexDirection: isMobile ? 'column' : 'row' }]}>
+            <TouchableOpacity onPress={goToLogin} style={styles.heroPrimaryBtn} activeOpacity={0.88}>
+              <LinearGradient
+                colors={['#F97316', '#EA580C']}
+                start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                style={styles.heroPrimaryBtnGrad}
+              >
+                <Mic size={18} color="#fff" strokeWidth={2} />
+                <Text style={styles.heroPrimaryBtnText}>Start for Free</Text>
+                <ArrowRight size={16} color="#fff" strokeWidth={2.5} />
+              </LinearGradient>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={goToLogin} style={styles.heroSecondaryBtn} activeOpacity={0.8}>
+              <Globe size={16} color="#fff" strokeWidth={1.8} />
+              <Text style={styles.heroSecondaryBtnText}>22 Indian Languages</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Trust row */}
+          <View style={styles.heroTrust}>
+            {['Free to use', 'No lawyer fees', 'Works offline'].map((t) => (
+              <View key={t} style={styles.heroTrustItem}>
+                <CheckCircle size={14} color="#4ADE80" strokeWidth={2} />
+                <Text style={styles.heroTrustText}>{t}</Text>
+              </View>
+            ))}
+          </View>
+        </Animated.View>
+      </LinearGradient>
+
+      {/* ── STATS STRIP ──────────────────────────────────────────────────────── */}
+      <View style={styles.statsStrip}>
+        {[
+          { n: '50,000+', label: 'Citizens Helped' },
+          { n: '22',      label: 'Indian Languages' },
+          { n: '6',       label: 'Legal Categories' },
+          { n: '4.8★',   label: 'User Rating' },
+        ].map((s, i) => (
+          <View key={i} style={[styles.statItem, i < 3 && styles.statBorder]}>
+            <Text style={styles.statNumber}>{s.n}</Text>
+            <Text style={styles.statLabel}>{s.label}</Text>
+          </View>
+        ))}
+      </View>
+
+      {/* ── FEATURES SECTION ─────────────────────────────────────────────────── */}
+      <View style={[styles.section, { backgroundColor: '#FAFAFA' }]}>
+        <View style={styles.container}>
+          <View style={styles.sectionHead}>
+            <Text style={styles.sectionEyebrow}>WHY NEETHIMITRA</Text>
+            <Text style={styles.sectionTitle}>Built for Bharat's{'\n'}Citizens</Text>
+            <Text style={styles.sectionSub}>Free, multilingual, and designed for people who have never had access to legal help before.</Text>
+          </View>
+          <View style={[styles.featureGrid, { flexDirection: 'row', flexWrap: 'wrap' }]}>
+            {FEATURES.map((f, i) => {
+              const FIcon = f.Icon;
+              return (
+                <View key={i} style={[
+                  styles.featureCard,
+                  { width: isMobile ? '100%' : isTablet ? '48%' : '31%' }
+                ]}>
+                  <View style={[styles.featureIconBg, { backgroundColor: f.bg }]}>
+                    <FIcon size={22} color={f.color} strokeWidth={1.8} />
+                  </View>
+                  <Text style={styles.featureTitle}>{f.title}</Text>
+                  <Text style={styles.featureDesc}>{f.desc}</Text>
+                </View>
+              );
+            })}
+          </View>
+        </View>
+      </View>
+
+      {/* ── HOW IT WORKS ─────────────────────────────────────────────────────── */}
+      <View style={styles.section}>
+        <View style={styles.container}>
+          <View style={styles.sectionHead}>
+            <Text style={styles.sectionEyebrow}>HOW IT WORKS</Text>
+            <Text style={styles.sectionTitle}>Three Steps to Justice</Text>
+          </View>
+          <View style={[styles.stepsRow, { flexDirection: isMobile ? 'column' : 'row' }]}>
+            {STEPS.map((s, i) => (
+              <View key={i} style={[styles.stepCard, { flex: isMobile ? 0 : 1 }]}>
+                <View style={[styles.stepNum, { borderColor: s.color }]}>
+                  <Text style={[styles.stepNumText, { color: s.color }]}>{s.n}</Text>
+                </View>
+                {!isMobile && i < 2 && (
+                  <View style={styles.stepLine} />
+                )}
+                <Text style={styles.stepTitle}>{s.title}</Text>
+                <Text style={styles.stepDesc}>{s.desc}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      </View>
+
+      {/* ── LEGAL CATEGORIES ─────────────────────────────────────────────────── */}
+      <View style={[styles.section, { backgroundColor: '#FAFAFA' }]}>
+        <View style={styles.container}>
+          <View style={styles.sectionHead}>
+            <Text style={styles.sectionEyebrow}>LEGAL CATEGORIES</Text>
+            <Text style={styles.sectionTitle}>We Cover All Areas{'\n'}of Indian Law</Text>
+          </View>
+          <View style={[styles.catGrid, { flexDirection: 'row', flexWrap: 'wrap' }]}>
+            {CATEGORIES.map((cat) => {
+              const m = CATEGORY_META[cat.id];
+              if (!m) return null;
+              const CatIcon = m.Icon;
+              return (
+                <TouchableOpacity
+                  key={cat.id}
+                  onPress={goToLogin}
+                  activeOpacity={0.8}
+                  style={[styles.catCard, { width: isMobile ? '100%' : isTablet ? '48%' : '31%' }]}
+                >
+                  <View style={[styles.catIconBg, { backgroundColor: m.color + '18' }]}>
+                    <CatIcon size={24} color={m.color} strokeWidth={1.6} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.catLabel}>{m.label}</Text>
+                    <Text style={styles.catHint}>{m.hint}</Text>
+                  </View>
+                  <ChevronRight size={16} color="#9CA3AF" strokeWidth={2} />
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+      </View>
+
+      {/* ── TESTIMONIALS ─────────────────────────────────────────────────────── */}
+      <View style={styles.section}>
+        <View style={styles.container}>
+          <View style={styles.sectionHead}>
+            <Text style={styles.sectionEyebrow}>SUCCESS STORIES</Text>
+            <Text style={styles.sectionTitle}>Real People, Real Justice</Text>
+          </View>
+          <View style={[styles.testimonialRow, { flexDirection: isMobile ? 'column' : 'row' }]}>
+            {TESTIMONIALS.map((t, i) => (
+              <View key={i} style={[styles.testimonialCard, { flex: isMobile ? 0 : 1 }]}>
+                <View style={styles.stars}>
+                  {[...Array(t.stars)].map((_, si) => (
+                    <Star key={si} size={14} color="#F59E0B" fill="#F59E0B" strokeWidth={0} />
+                  ))}
+                </View>
+                <Text style={styles.testimonialText}>"{t.text}"</Text>
+                <View style={styles.testimonialAuthor}>
+                  <View style={styles.testimonialAvatar}>
+                    <Text style={styles.testimonialAvatarText}>{t.name[0]}</Text>
+                  </View>
+                  <View>
+                    <Text style={styles.testimonialName}>{t.name}</Text>
+                    <Text style={styles.testimonialLoc}>{t.loc}</Text>
+                  </View>
+                </View>
+              </View>
+            ))}
+          </View>
+        </View>
+      </View>
+
+      {/* ── FINAL CTA BAND ───────────────────────────────────────────────────── */}
+      <LinearGradient
+        colors={['#E8580C', '#F97316', '#15803D']}
+        start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+        style={styles.ctaBand}
+      >
+        <Text style={[styles.ctaBandTitle, { fontSize: isMobile ? 24 : 36 }]}>
+          Know Your Rights Today — Free
+        </Text>
+        <Text style={styles.ctaBandSub}>
+          No lawyer. No fees. Just instant, multilingual legal guidance.
+        </Text>
+        <TouchableOpacity onPress={goToLogin} style={styles.ctaBandBtn} activeOpacity={0.88}>
+          <Text style={styles.ctaBandBtnText}>Get Started — It's Free</Text>
+          <ArrowRight size={18} color="#E8580C" strokeWidth={2.5} />
+        </TouchableOpacity>
+      </LinearGradient>
+
+      {/* ── FOOTER ───────────────────────────────────────────────────────────── */}
+      <View style={styles.footer}>
+        <View style={[styles.container, styles.footerInner]}>
+          <View style={styles.footerBrand}>
+            <Logo size={28} showText lightBg stacked={false} />
+            <Text style={styles.footerTagline}>Know Your Rights. In Your Voice.</Text>
+            <Text style={styles.footerDisc}>
+              NeethiMitra AI provides general legal information and is not a substitute for professional legal advice.
+            </Text>
+          </View>
+          <View style={styles.footerLinks}>
+            {['Privacy Policy', 'Terms of Service', 'Disclaimer', 'Contact Us'].map((l) => (
+              <TouchableOpacity key={l} style={styles.footerLink}>
+                <Text style={styles.footerLinkText}>{l}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+        <View style={styles.footerBottom}>
+          <Text style={styles.footerCopy}>© 2025 NeethiMitra AI. Made with ❤️ for Bharat.</Text>
+        </View>
+      </View>
+
+    </ScrollView>
+  );
+}
+
+const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: '#FFFFFF' },
+
+  // Navbar
+  navbar: { backgroundColor: 'rgba(255,255,255,0.96)', borderBottomWidth: 1, borderBottomColor: '#F3F4F6', zIndex: 100 },
+  navInner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', maxWidth: 1200, alignSelf: 'center', width: '100%', paddingHorizontal: 24, paddingVertical: 14 },
+  navLinks: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  navLink: { paddingHorizontal: 14, paddingVertical: 8 },
+  navLinkText: { fontSize: 14, fontFamily: 'PlusJakartaSans_600SemiBold', color: '#374151' },
+  navLoginBtn: { paddingHorizontal: 16, paddingVertical: 8 },
+  navLoginText: { fontSize: 14, fontFamily: 'PlusJakartaSans_600SemiBold', color: '#E8580C' },
+  navCtaBtn: { backgroundColor: '#E8580C', paddingHorizontal: 18, paddingVertical: 10, borderRadius: 10 },
+  navCtaText: { fontSize: 14, fontFamily: 'PlusJakartaSans_700Bold', color: '#FFFFFF' },
+
+  // Hero
+  hero: { paddingTop: 80, paddingBottom: 80, paddingHorizontal: 24, overflow: 'hidden' },
+  heroBubble: { position: 'absolute', borderRadius: 9999, backgroundColor: '#FFFFFF' },
+  heroContent: { maxWidth: 760, alignSelf: 'center', width: '100%', alignItems: 'center' },
+  heroBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(249,115,22,0.18)', paddingHorizontal: 14, paddingVertical: 7, borderRadius: 99, marginBottom: 24, borderWidth: 1, borderColor: 'rgba(249,115,22,0.3)' },
+  heroBadgeText: { fontSize: 12, fontFamily: 'PlusJakartaSans_700Bold', color: '#F97316', letterSpacing: 0.5 },
+  heroH1: { fontFamily: 'PlusJakartaSans_700Bold', color: '#FFFFFF', textAlign: 'center', lineHeight: 1.15 * 56, letterSpacing: -1, marginBottom: 20 },
+  heroSub: { fontFamily: 'PlusJakartaSans_400Regular', color: 'rgba(255,255,255,0.8)', textAlign: 'center', lineHeight: 28, marginBottom: 36 },
+  heroCtaRow: { gap: 14, alignItems: 'center', marginBottom: 28 },
+  heroPrimaryBtn: { borderRadius: 14, overflow: 'hidden', shadowColor: '#E8580C', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.4, shadowRadius: 20, elevation: 8 },
+  heroPrimaryBtnGrad: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 28, paddingVertical: 16, gap: 10 },
+  heroPrimaryBtnText: { fontSize: 16, fontFamily: 'PlusJakartaSans_700Bold', color: '#FFFFFF' },
+  heroSecondaryBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.3)', paddingHorizontal: 20, paddingVertical: 14, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.1)' },
+  heroSecondaryBtnText: { fontSize: 14, fontFamily: 'PlusJakartaSans_600SemiBold', color: '#FFFFFF' },
+  heroTrust: { flexDirection: 'row', gap: 20, flexWrap: 'wrap', justifyContent: 'center' },
+  heroTrustItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  heroTrustText: { fontSize: 13, fontFamily: 'PlusJakartaSans_400Regular', color: 'rgba(255,255,255,0.75)' },
+
+  // Stats
+  statsStrip: { flexDirection: 'row', backgroundColor: '#FFFFFF', borderBottomWidth: 1, borderBottomColor: '#F3F4F6', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
+  statItem: { flex: 1, paddingVertical: 24, alignItems: 'center' },
+  statBorder: { borderRightWidth: 1, borderRightColor: '#F3F4F6' },
+  statNumber: { fontSize: 28, fontFamily: 'PlusJakartaSans_700Bold', color: '#E8580C', marginBottom: 4 },
+  statLabel: { fontSize: 12, fontFamily: 'PlusJakartaSans_400Regular', color: '#6B7280' },
+
+  // Section
+  section: { paddingVertical: 72, paddingHorizontal: 24 },
+  container: { maxWidth: 1200, alignSelf: 'center', width: '100%' },
+  sectionHead: { alignItems: 'center', marginBottom: 48 },
+  sectionEyebrow: { fontSize: 11, fontFamily: 'PlusJakartaSans_700Bold', color: '#E8580C', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 10 },
+  sectionTitle: { fontSize: 36, fontFamily: 'PlusJakartaSans_700Bold', color: '#111827', textAlign: 'center', lineHeight: 46, marginBottom: 14 },
+  sectionSub: { fontSize: 16, fontFamily: 'PlusJakartaSans_400Regular', color: '#6B7280', textAlign: 'center', lineHeight: 26, maxWidth: 560 },
+
+  // Features
+  featureGrid: { gap: 20 },
+  featureCard: { backgroundColor: '#FFFFFF', borderRadius: 20, padding: 28, borderWidth: 1, borderColor: '#F3F4F6', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.06, shadowRadius: 12, elevation: 3, marginBottom: 4 },
+  featureIconBg: { width: 52, height: 52, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginBottom: 18 },
+  featureTitle: { fontSize: 16, fontFamily: 'PlusJakartaSans_700Bold', color: '#111827', marginBottom: 8 },
+  featureDesc: { fontSize: 14, fontFamily: 'PlusJakartaSans_400Regular', color: '#6B7280', lineHeight: 22 },
+
+  // Steps
+  stepsRow: { gap: 24, alignItems: 'flex-start' },
+  stepCard: { alignItems: 'center', position: 'relative', paddingHorizontal: 16 },
+  stepNum: { width: 64, height: 64, borderRadius: 32, borderWidth: 2, alignItems: 'center', justifyContent: 'center', marginBottom: 20, backgroundColor: '#FFFFFF' },
+  stepNumText: { fontSize: 20, fontFamily: 'PlusJakartaSans_700Bold' },
+  stepLine: { position: 'absolute', top: 32, left: '60%', right: '-40%', height: 2, backgroundColor: '#E5E7EB' },
+  stepTitle: { fontSize: 17, fontFamily: 'PlusJakartaSans_700Bold', color: '#111827', marginBottom: 8, textAlign: 'center' },
+  stepDesc: { fontSize: 14, fontFamily: 'PlusJakartaSans_400Regular', color: '#6B7280', lineHeight: 22, textAlign: 'center' },
+
+  // Categories
+  catGrid: { gap: 16 },
+  catCard: { flexDirection: 'row', alignItems: 'center', gap: 16, backgroundColor: '#FFFFFF', borderRadius: 16, padding: 20, borderWidth: 1, borderColor: '#F3F4F6', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2, marginBottom: 4 },
+  catIconBg: { width: 48, height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  catLabel: { fontSize: 15, fontFamily: 'PlusJakartaSans_700Bold', color: '#111827', marginBottom: 2 },
+  catHint: { fontSize: 13, fontFamily: 'PlusJakartaSans_400Regular', color: '#9CA3AF' },
+
+  // Testimonials
+  testimonialRow: { gap: 20 },
+  testimonialCard: { backgroundColor: '#FFFFFF', borderRadius: 20, padding: 28, borderWidth: 1, borderColor: '#F3F4F6', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.06, shadowRadius: 12, elevation: 3 },
+  stars: { flexDirection: 'row', gap: 3, marginBottom: 16 },
+  testimonialText: { fontSize: 15, fontFamily: 'PlusJakartaSans_400Regular', color: '#374151', lineHeight: 24, marginBottom: 20, fontStyle: 'italic' },
+  testimonialAuthor: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  testimonialAvatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(232,88,12,0.12)', alignItems: 'center', justifyContent: 'center' },
+  testimonialAvatarText: { fontSize: 16, fontFamily: 'PlusJakartaSans_700Bold', color: '#E8580C' },
+  testimonialName: { fontSize: 14, fontFamily: 'PlusJakartaSans_700Bold', color: '#111827' },
+  testimonialLoc: { fontSize: 12, fontFamily: 'PlusJakartaSans_400Regular', color: '#9CA3AF' },
+
+  // CTA Band
+  ctaBand: { paddingVertical: 72, paddingHorizontal: 24, alignItems: 'center' },
+  ctaBandTitle: { fontFamily: 'PlusJakartaSans_700Bold', color: '#FFFFFF', textAlign: 'center', marginBottom: 14 },
+  ctaBandSub: { fontSize: 16, fontFamily: 'PlusJakartaSans_400Regular', color: 'rgba(255,255,255,0.85)', textAlign: 'center', marginBottom: 36 },
+  ctaBandBtn: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#FFFFFF', paddingHorizontal: 32, paddingVertical: 18, borderRadius: 14, shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.2, shadowRadius: 20, elevation: 8 },
+  ctaBandBtnText: { fontSize: 16, fontFamily: 'PlusJakartaSans_700Bold', color: '#E8580C' },
+
+  // Footer
+  footer: { backgroundColor: '#111827', paddingTop: 56 },
+  footerInner: { flexDirection: 'row', gap: 48, flexWrap: 'wrap', marginBottom: 40 },
+  footerBrand: { flex: 1, minWidth: 260 },
+  footerTagline: { fontSize: 13, fontFamily: 'PlusJakartaSans_400Regular', color: '#9CA3AF', marginTop: 12, marginBottom: 8 },
+  footerDisc: { fontSize: 12, fontFamily: 'PlusJakartaSans_400Regular', color: '#6B7280', lineHeight: 18, maxWidth: 320 },
+  footerLinks: { flexDirection: 'column', gap: 10 },
+  footerLink: { paddingVertical: 4 },
+  footerLinkText: { fontSize: 13, fontFamily: 'PlusJakartaSans_400Regular', color: '#9CA3AF' },
+  footerBottom: { borderTopWidth: 1, borderTopColor: '#1F2937', paddingVertical: 20, alignItems: 'center' },
+  footerCopy: { fontSize: 12, fontFamily: 'PlusJakartaSans_400Regular', color: '#4B5563' },
+});

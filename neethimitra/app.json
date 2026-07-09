@@ -1,0 +1,55 @@
+{
+  "expo": {
+    "name": "NeethiMitra",
+    "slug": "neethimitra",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "scheme": "neethimitra",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#FF9933"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.neethimitra.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#FF9933"
+      },
+      "package": "com.neethimitra.app"
+    },
+    "web": {
+      "bundler": "metro",
+      "favicon": "./assets/favicon.png",
+      "output": "static",
+      "name": "NeethiMitra - Your Legal Friend"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-camera",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Allow NeethiMitra to access your microphone to record your legal queries."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow NeethiMitra to access your photos to upload legal documents.",
+          "cameraPermission": "Allow NeethiMitra to use the camera to capture legal documents."
+        }
+      ],
+      "expo-secure-store",
+      "expo-audio"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

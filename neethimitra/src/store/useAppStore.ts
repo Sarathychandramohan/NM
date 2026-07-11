@@ -9,9 +9,12 @@ import * as SecureStore from 'expo-secure-store';
 // Android Emulator     : 10.0.2.2 maps to the host machine's localhost
 // iOS Simulator        : localhost also works
 // Physical device      : Change to your PC's LAN IP, e.g. 'http://192.168.1.5:8000'
-export const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || (Platform.OS === 'web'
-  ? 'http://127.0.0.1:8000'
-  : 'http://10.0.2.2:8000');
+const FALLBACK_URL = Platform.OS === 'web' ? 'http://127.0.0.1:8000' : 'http://10.0.2.2:8000';
+export const API_BASE_URL = (() => {
+  const url = process.env.EXPO_PUBLIC_API_URL || FALLBACK_URL;
+  try { new URL(url); } catch { return FALLBACK_URL; }
+  return url;
+})();
 
 export type Category = {
   id: string;
@@ -74,6 +77,7 @@ export type UploadedDoc = {
   date: string;
   status: 'analysed' | 'pending' | 'failed';
   fileUrl?: string;
+  sessionId?: string;
 };
 
 // ─── Web SecureStore Polyfill ──────────────────────────────────────────────
@@ -126,10 +130,12 @@ interface AppState {
   sessions: Session[];
   activeSession: Session | null;
   startSession: (category: Category) => Promise<void>;
+  fetchSessions: () => Promise<void>;
   sendMessageToBackend: (text: string, isVoice?: boolean) => Promise<void>;
   sendVoiceRecording: (audioUri: string) => Promise<void>;  // BUG-F007 support
   clearActiveSession: () => void;
   loadSession: (sessionId: string) => Promise<void>;
+  generateMessageAudio: (messageId: string) => Promise<string | undefined>;
 
   // PDF Generation
   generateComplaint: () => Promise<string | null>;
@@ -137,6 +143,7 @@ interface AppState {
   // Documents
   documents: UploadedDoc[];
   uploadDocument: (uri: string, filename: string, type: string) => Promise<void>;
+  fetchUserDocuments: () => Promise<void>;
 
   // Mic
   isListening: boolean;
@@ -155,23 +162,24 @@ interface AppState {
   refreshToken: string | null;     // BUG-F005 addition
   userName: string | null;         // name from backend
   userPhone: string | null;        // phone from backend
+  userEmail: string | null;        // email from backend
   profileImage: string | null;     // Google profile photo URL
   isAnonymousGuest: boolean;       // true when no real login happened
   hasCompletedOnboarding: boolean;
   guestQueriesRemaining: number;
 
   checkAuthStatus: () => Promise<void>;
-  requestOtp: (phone: string) => Promise<void>;
-  login: (phone: string, otp: string) => Promise<void>;
-  upgradeGuestAccount: (phone: string, otp: string, migrateHistory: boolean) => Promise<void>;
-  loginWithGoogle: (email: string, name: string, profileImage: string) => Promise<void>;
+  register: (name: string, email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<void>;
+  upgradeGuestAccount: (email: string, name: string, password: string, migrateHistory: boolean) => Promise<void>;
+  loginWithGoogle: (idToken: string, preferredLanguage?: string) => Promise<void>;
   logout: () => Promise<void>;
   enableGuest: () => Promise<void>;
   decrementQueries: () => Promise<void>;
 
   // Overlays
-  activeOverlay: 'recording' | 'language' | 'upload' | 'success' | 'error' | 'confirm' | 'login_prompt' | null;
-  setOverlay: (overlay: 'recording' | 'language' | 'upload' | 'success' | 'error' | 'confirm' | 'login_prompt' | null) => void;
+  activeOverlay: 'recording' | 'language' | 'upload' | 'success' | 'error' | 'confirm' | 'login_prompt' | 'confirm_logout' | null;
+  setOverlay: (overlay: 'recording' | 'language' | 'upload' | 'success' | 'error' | 'confirm' | 'login_prompt' | 'confirm_logout' | null) => void;
 }
 
 // ─── Helper: build auth headers ──────────────────────────────────────────
@@ -247,6 +255,48 @@ export const useAppStore = create<AppState>()(
           }
         } catch (err) {
           console.warn('startSession: offline mode, using local id:', err);
+        }
+      },
+
+      // ── Fetch all sessions from backend and sync to store ──────────────
+      fetchSessions: async () => {
+        const { authToken } = get();
+        // Only fetch if we have a real (non-guest) token
+        if (!authToken) return;
+        get().fetchUserDocuments().catch(() => {});
+        try {
+          const response = await fetch(`${API_BASE_URL}/api/sessions`, {
+            headers: authHeaders(authToken),
+          });
+          if (response.ok) {
+            const data: any[] = await response.json();
+            const mapped: Session[] = data.map((s) => ({
+              id: s.id,
+              categoryId: categoryIdFromLabel(s.category),
+              categoryLabel: s.category,
+              // Sessions list endpoint may not include full messages; keep existing messages if already loaded
+              messages: s.messages
+                ? s.messages.map((m: any) => ({
+                    id: m.id.toString(),
+                    role: m.role,
+                    text: m.text_content,
+                    englishTranslation: m.english_translation,
+                    audioUri: m.audio_url ? `${API_BASE_URL}${m.audio_url}` : undefined,
+                    isVoice: m.input_type === 'voice',
+                    timestamp: new Date(m.created_at),
+                  }))
+                : [],
+              startedAt: new Date(s.created_at),
+            }));
+            set((prev) => {
+              // Merge: keep any local sessions not yet synced, prefer backend order
+              const backendIds = new Set(mapped.map((s) => s.id));
+              const localOnly = prev.sessions.filter((s) => !backendIds.has(s.id));
+              return { sessions: [...localOnly, ...mapped] };
+            });
+          }
+        } catch (err) {
+          console.warn('fetchSessions: failed (offline?):', err);
         }
       },
 
@@ -347,7 +397,7 @@ export const useAppStore = create<AppState>()(
             throw new Error(`Backend error: ${response.status}`);
           }
         } catch (err) {
-          console.warn('sendMessageToBackend: using offline mock.', err);
+          console.warn('sendMessageToBackend: using offline mock.');
           // BUG-F034 FIX: removed early set({ isProcessing: false }) here;
           // finally always runs, so it handles the cleanup once.
           setTimeout(() => {
@@ -444,7 +494,7 @@ export const useAppStore = create<AppState>()(
             throw new Error(`Voice endpoint error: ${response.status}`);
           }
         } catch (err) {
-          console.warn('sendVoiceRecording: failed:', err);
+          console.warn('sendVoiceRecording: failed');
           const aiMsg: Message = {
             id: (Date.now() + 1).toString(),
             role: 'assistant',
@@ -487,11 +537,66 @@ export const useAppStore = create<AppState>()(
         return null;
       },
 
+      generateMessageAudio: async (messageId) => {
+        const { activeSession, authToken } = get();
+        if (!activeSession) return undefined;
+
+        try {
+          const headers: Record<string, string> = {
+            'Content-Type': 'application/json',
+          };
+          if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+
+          const response = await fetch(`${API_BASE_URL}/api/sessions/${activeSession.id}/messages/${messageId}/speak`, {
+            method: 'POST',
+            headers,
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            const fullAudioUrl = data.audio_url ? `${API_BASE_URL}${data.audio_url}` : undefined;
+
+            if (fullAudioUrl) {
+              set((s) => {
+                if (!s.activeSession) return s;
+                
+                // Update activeSession messages list
+                const updatedMessages = s.activeSession.messages.map((m) =>
+                  m.id === messageId ? { ...m, audioUri: fullAudioUrl } : m
+                );
+                const updatedActive = { ...s.activeSession, messages: updatedMessages };
+
+                // Update global sessions list
+                const updatedSessions = s.sessions.map((sess) =>
+                  sess.id === updatedActive.id ? updatedActive : sess
+                );
+
+                return {
+                  activeSession: updatedActive,
+                  sessions: updatedSessions,
+                };
+              });
+            }
+
+            return fullAudioUrl;
+          }
+        } catch (err) {
+          console.warn('generateMessageAudio: failed:', err);
+        }
+        return undefined;
+      },
+
       documents: [],
 
       uploadDocument: async (uri, filename, type) => {
         const { activeSession, authToken } = get();
-        const sessionId = activeSession ? activeSession.id : 'general_session';
+        let sessionId = activeSession ? activeSession.id : null;
+        
+        if (!sessionId) {
+          await get().startSession({ id: 'general', label: 'General Query', emoji: '💬', description: '', colorKey: 'general' });
+          const newActive = get().activeSession;
+          sessionId = newActive ? newActive.id : 'general_session';
+        }
 
         const newDoc: UploadedDoc = {
           id: Date.now().toString(),
@@ -500,13 +605,12 @@ export const useAppStore = create<AppState>()(
           emoji: '📄',
           date: new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }),
           status: 'pending',
+          sessionId,
         };
 
         set((s) => ({ documents: [newDoc, ...s.documents] }));
 
         try {
-          // BUG-F011 FIX: Use React Native FormData object format { uri, type, name }
-          // instead of fetch(uri).blob() which fails on Android native file:// URIs
           const formData = new FormData();
           formData.append('file', { uri, type: type || 'application/octet-stream', name: filename } as any);
 
@@ -524,23 +628,57 @@ export const useAppStore = create<AppState>()(
             set((s) => ({
               documents: s.documents.map((d) =>
                 d.id === newDoc.id
-                  ? { ...d, status: 'pending', fileUrl: docData.file_path ? `${API_BASE_URL}${docData.file_path}` : undefined }
+                  ? { 
+                      ...d, 
+                      status: 'pending', 
+                      fileUrl: docData.file_path ? `${API_BASE_URL}${docData.file_path}` : undefined,
+                      sessionId: docData.session_id,
+                    }
                   : d
               ),
             }));
-            if (activeSession) await get().loadSession(activeSession.id);
+            const activeId = get().activeSession?.id;
+            if (activeId) await get().loadSession(activeId);
           } else {
             const err = await apiResponse.text();
             throw new Error(`Upload failed: ${err}`);
           }
         } catch (err) {
           console.warn('uploadDocument: upload failed:', err);
-          // BUG-F022 FIX: Mark as 'failed' instead of misleading 'analysed'
           set((s) => ({
             documents: s.documents.map((d) =>
               d.id === newDoc.id ? { ...d, status: 'failed' } : d
             ),
           }));
+        }
+      },
+
+      fetchUserDocuments: async () => {
+        try {
+          const { authToken } = get();
+          const headers: Record<string, string> = {};
+          if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+
+          const response = await fetch(`${API_BASE_URL}/api/sessions/user/all-docs`, {
+            headers,
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            const mapped: UploadedDoc[] = data.map((d: any) => ({
+              id: d.id.toString(),
+              name: d.filename,
+              type: d.mime_type || 'Document',
+              emoji: '📄',
+              date: new Date(d.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }),
+              status: d.analysis_status === 'completed' ? 'analysed' : (d.analysis_status === 'failed' ? 'failed' : 'pending'),
+              fileUrl: d.file_path ? `${API_BASE_URL}${d.file_path}` : undefined,
+              sessionId: d.session_id,
+            }));
+            set({ documents: mapped });
+          }
+        } catch (err) {
+          console.warn('fetchUserDocuments: failed:', err);
         }
       },
 
@@ -559,6 +697,7 @@ export const useAppStore = create<AppState>()(
       refreshToken: null,
       userName: null,
       userPhone: null,
+      userEmail: null,
       profileImage: null,
       isAnonymousGuest: false,
       hasCompletedOnboarding: false,
@@ -571,6 +710,7 @@ export const useAppStore = create<AppState>()(
           const onboarding  = await webSecureStore.getItemAsync('has_completed_onboarding');
           const name        = await webSecureStore.getItemAsync('user_name');
           const phone       = await webSecureStore.getItemAsync('user_phone');
+          const email       = await webSecureStore.getItemAsync('user_email');
           const profileImg  = await webSecureStore.getItemAsync('profile_image');
           const isGuest     = await webSecureStore.getItemAsync('is_anonymous_guest');
           set({
@@ -579,69 +719,108 @@ export const useAppStore = create<AppState>()(
             hasCompletedOnboarding: onboarding === 'true',
             userName: name,
             userPhone: phone,
+            userEmail: email,
             profileImage: profileImg,
             isAnonymousGuest: isGuest === 'true',
           });
+          // Sync sessions from backend if authenticated
+          if (token && isGuest !== 'true') {
+            get().fetchSessions().catch(() => {});
+          }
         } catch (e) {
           console.warn('checkAuthStatus: failed to read from SecureStore:', e);
         }
       },
 
-      // ── BUG-F003 FIX: New requestOtp action ──────────────────────────
-      requestOtp: async (phone: string) => {
-        const response = await fetch(`${API_BASE_URL}/api/auth/request-otp`, {
+      register: async (name, email, password) => {
+        const response = await fetch(`${API_BASE_URL}/api/auth/register`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ phone }),
+          body: JSON.stringify({
+            name,
+            email,
+            password,
+            preferred_language: get().selectedLanguage.code,
+          }),
         });
         if (!response.ok) {
           const body = await response.json().catch(() => ({}));
-          throw new Error(body.detail ?? 'Failed to send OTP. Please try again.');
+          throw new Error(body.detail ?? 'Registration failed. Please try again.');
         }
         const data = await response.json();
-        // In dev mode the backend returns an otp_hint — log it for convenience
-        if (data.otp_hint) console.log(`[DEV] OTP for ${phone}: ${data.otp_hint}`);
+        await webSecureStore.setItemAsync('auth_token', data.access_token);
+        await webSecureStore.setItemAsync('refresh_token', data.refresh_token ?? '');
+        await webSecureStore.setItemAsync('has_completed_onboarding', 'true');
+        await webSecureStore.setItemAsync('user_name', data.user?.name ?? name);
+        await webSecureStore.setItemAsync('user_email', data.user?.email ?? email);
+        await webSecureStore.setItemAsync('user_phone', data.user?.phone ?? '');
+        await webSecureStore.setItemAsync('is_anonymous_guest', 'false');
+        set({
+          authToken: data.access_token,
+          refreshToken: data.refresh_token ?? null,
+          userName: data.user?.name ?? name,
+          userEmail: data.user?.email ?? email,
+          userPhone: data.user?.phone ?? null,
+          profileImage: null,
+          isAnonymousGuest: false,
+          hasCompletedOnboarding: true,
+          guestQueriesRemaining: 3,
+          sessions: [],
+        });
+        get().fetchSessions().catch(() => {});
       },
 
-      // ── BUG-F004/F005 FIX: login now calls real verify-otp endpoint ──
-      login: async (phone: string, otp: string) => {
-        const response = await fetch(`${API_BASE_URL}/api/auth/verify-otp`, {
+      login: async (email, password) => {
+        const details: Record<string, string> = {
+          username: email,
+          password: password,
+        };
+        const formBody = Object.keys(details)
+          .map((key) => encodeURIComponent(key) + '=' + encodeURIComponent(details[key]))
+          .join('&');
+
+        const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ phone, otp }),
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+          },
+          body: formBody,
         });
         if (!response.ok) {
           const body = await response.json().catch(() => ({}));
-          throw new Error(body.detail ?? 'Invalid OTP. Please try again.');
+          throw new Error(body.detail ?? 'Incorrect email or password.');
         }
         const data = await response.json();
-        // data: { access_token, refresh_token, token_type, user: { id, phone, name, ... } }
 
         await webSecureStore.setItemAsync('auth_token', data.access_token);
         await webSecureStore.setItemAsync('refresh_token', data.refresh_token ?? '');
         await webSecureStore.setItemAsync('has_completed_onboarding', 'true');
         await webSecureStore.setItemAsync('user_name', data.user?.name ?? '');
-        await webSecureStore.setItemAsync('user_phone', data.user?.phone ?? phone);
+        await webSecureStore.setItemAsync('user_email', data.user?.email ?? email);
+        await webSecureStore.setItemAsync('user_phone', data.user?.phone ?? '');
+        await webSecureStore.setItemAsync('is_anonymous_guest', 'false');
 
         set({
           authToken: data.access_token,
           refreshToken: data.refresh_token ?? null,
           userName: data.user?.name ?? null,
-          userPhone: data.user?.phone ?? phone,
+          userEmail: data.user?.email ?? email,
+          userPhone: data.user?.phone ?? null,
           profileImage: null,
           isAnonymousGuest: false,
           hasCompletedOnboarding: true,
           guestQueriesRemaining: 3,
+          sessions: [], // clear before re-fetch
         });
+        get().fetchSessions().catch(() => {});
       },
 
-      // ── Guest upgrade: call /api/auth/guest/upgrade with optional session migration ──
-      upgradeGuestAccount: async (phone: string, otp: string, migrateHistory: boolean) => {
+      upgradeGuestAccount: async (email, name, password, migrateHistory) => {
         const { authToken } = get();
         const response = await fetch(`${API_BASE_URL}/api/auth/guest/upgrade`, {
           method: 'POST',
           headers: authHeaders(authToken),
-          body: JSON.stringify({ phone, otp, migrate_history: migrateHistory }),
+          body: JSON.stringify({ email, name, password, migrate_history: migrateHistory }),
         });
         if (!response.ok) {
           const body = await response.json().catch(() => ({}));
@@ -652,63 +831,82 @@ export const useAppStore = create<AppState>()(
         await webSecureStore.setItemAsync('auth_token', data.access_token);
         await webSecureStore.setItemAsync('refresh_token', data.refresh_token ?? '');
         await webSecureStore.setItemAsync('has_completed_onboarding', 'true');
-        await webSecureStore.setItemAsync('user_name', data.user?.name ?? '');
-        await webSecureStore.setItemAsync('user_phone', data.user?.phone ?? phone);
+        await webSecureStore.setItemAsync('user_name', data.user?.name ?? name);
+        await webSecureStore.setItemAsync('user_email', data.user?.email ?? email);
+        await webSecureStore.setItemAsync('user_phone', data.user?.phone ?? '');
         await webSecureStore.setItemAsync('is_anonymous_guest', 'false');
 
         set({
           authToken: data.access_token,
           refreshToken: data.refresh_token ?? null,
-          userName: data.user?.name ?? null,
-          userPhone: data.user?.phone ?? phone,
+          userName: data.user?.name ?? name,
+          userEmail: data.user?.email ?? email,
+          userPhone: data.user?.phone ?? null,
           profileImage: null,
           isAnonymousGuest: false,
           hasCompletedOnboarding: true,
           guestQueriesRemaining: 3,
-          // Clear local sessions — they will be reloaded from backend (now owned by real user)
           sessions: [],
           activeSession: null,
         });
+        get().fetchSessions().catch(() => {});
       },
 
-      // ── Google Login (simulated) ──────────────────────────────────────
-      loginWithGoogle: async (email: string, name: string, profileImage: string) => {
-        // In production: exchange Google ID token with backend /api/auth/google.
-        // For hackathon: store locally with a mock token so the app works end-to-end.
-        const mockToken = `google_${Date.now()}`;
-        await webSecureStore.setItemAsync('auth_token', mockToken);
-        await webSecureStore.setItemAsync('refresh_token', mockToken + '_refresh');
+      // ── Google Login — calls real backend /api/auth/google ───────────
+      loginWithGoogle: async (idToken: string, preferredLanguage?: string) => {
+        const response = await fetch(`${API_BASE_URL}/api/auth/google`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id_token: idToken,
+            preferred_language: preferredLanguage || get().selectedLanguage.code,
+          }),
+        });
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({}));
+          throw new Error(body.detail ?? 'Google Sign-In failed.');
+        }
+        const data = await response.json();
+        await webSecureStore.setItemAsync('auth_token', data.access_token);
+        await webSecureStore.setItemAsync('refresh_token', data.refresh_token ?? '');
         await webSecureStore.setItemAsync('has_completed_onboarding', 'true');
-        await webSecureStore.setItemAsync('user_name', name);
-        await webSecureStore.setItemAsync('user_phone', '');
-        await webSecureStore.setItemAsync('profile_image', profileImage);
+        await webSecureStore.setItemAsync('user_name', data.user?.name ?? '');
+        await webSecureStore.setItemAsync('user_email', data.user?.email ?? '');
+        await webSecureStore.setItemAsync('user_phone', data.user?.phone ?? '');
+        await webSecureStore.setItemAsync('profile_image', data.user?.profile_image ?? '');
         await webSecureStore.setItemAsync('is_anonymous_guest', 'false');
         set({
-          authToken: mockToken,
-          refreshToken: mockToken + '_refresh',
-          userName: name,
-          userPhone: null,
-          profileImage,
+          authToken: data.access_token,
+          refreshToken: data.refresh_token ?? null,
+          userName: data.user?.name ?? null,
+          userEmail: data.user?.email ?? null,
+          userPhone: data.user?.phone ?? null,
+          profileImage: data.user?.profile_image ?? null,
           isAnonymousGuest: false,
           hasCompletedOnboarding: true,
           guestQueriesRemaining: 3,
+          sessions: [],
         });
+        get().fetchSessions().catch(() => {});
       },
 
       logout: async () => {
         const { authToken, refreshToken } = get();
         if (authToken && refreshToken) {
-          fetch(`${API_BASE_URL}/api/auth/logout`, {
-            method: 'POST',
-            headers: authHeaders(authToken),
-            body: JSON.stringify({ refresh_token: refreshToken }),
-          }).catch(() => {});
+          try {
+            await fetch(`${API_BASE_URL}/api/auth/logout`, {
+              method: 'POST',
+              headers: authHeaders(authToken),
+              body: JSON.stringify({ refresh_token: refreshToken }),
+            });
+          } catch { /* best-effort revocation */ }
         }
         try {
           await webSecureStore.deleteItemAsync('auth_token');
           await webSecureStore.deleteItemAsync('refresh_token');
           await webSecureStore.deleteItemAsync('user_name');
           await webSecureStore.deleteItemAsync('user_phone');
+          await webSecureStore.deleteItemAsync('user_email');
           await webSecureStore.deleteItemAsync('profile_image');
           await webSecureStore.deleteItemAsync('is_anonymous_guest');
         } catch {}
@@ -717,6 +915,7 @@ export const useAppStore = create<AppState>()(
           refreshToken: null,
           userName: null,
           userPhone: null,
+          userEmail: null,
           profileImage: null,
           isAnonymousGuest: false,
           guestQueriesRemaining: 3,

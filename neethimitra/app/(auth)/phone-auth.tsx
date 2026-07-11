@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator,
@@ -10,13 +10,10 @@ import { useAppStore } from '@store/useAppStore';
 import { Colors } from '@constants/colors';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Logo } from '@/components/ui/Logo';
-import { ArrowRight, ShieldCheck, Globe, FileText, X, AlertCircle } from 'lucide-react-native';
+import { ArrowRight, ShieldCheck, Globe, FileText, X, AlertCircle, Mail, Lock, User as UserIcon, ArrowLeft } from 'lucide-react-native';
 import { safeImpact } from '@/utils/haptics';
 import * as Haptics from 'expo-haptics';
 import { UI_TRANSLATIONS } from '@constants/translations';
-import Animated, {
-  useSharedValue, useAnimatedStyle, withSpring, withTiming,
-} from 'react-native-reanimated';
 
 const isWeb = (Platform.OS as string) === 'web';
 
@@ -26,45 +23,58 @@ const WEB_FEATURES = [
   { icon: FileText,    text: 'Instant FIR drafts, RTI applications, complaint letters' },
 ];
 
-
-
-// ── Google Logo SVG-like using View primitives ────────────────────────────────
-function GoogleLogo({ size = 20 }: { size?: number }) {
-  return (
-    <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
-      <Text style={{ fontSize: size * 0.9, lineHeight: size, fontFamily: 'PlusJakartaSans_700Bold' }}>G</Text>
-    </View>
-  );
-}
-
 export default function PhoneAuthScreen() {
   const router = useRouter();
-  const { enableGuest, requestOtp, isDarkMode, selectedLanguage } = useAppStore();
+  const { enableGuest, login, register, upgradeGuestAccount, loginWithGoogle, isDarkMode, selectedLanguage, isAnonymousGuest, setOverlay } = useAppStore();
   const { width } = useWindowDimensions();
   const C = isDarkMode ? Colors.dark : Colors.light;
   const t = UI_TRANSLATIONS[selectedLanguage.code] || UI_TRANSLATIONS['en-IN'];
 
-  const [phone, setPhone]   = useState('');
-  const [isSending, setSending] = useState(false);
-  const [error, setError]   = useState<string | null>(null);
-  const [googleToast, setGoogleToast] = useState(false);
-  const phoneRef = useRef<TextInput>(null);
+  // Tabs: 'login' | 'register'
+  const [activeTab, setActiveTab] = useState<'login' | 'register'>('login');
 
-  const isValid = /^[6-9]\d{9}$/.test(phone);
+  // Input states
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+
+  const [isLoading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const emailRef = useRef<TextInput>(null);
+  const passwordRef = useRef<TextInput>(null);
+  const nameRef = useRef<TextInput>(null);
+
+  const isEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  const isPasswordValid = password.length >= 6;
+  const isNameValid = name.trim().length >= 2;
+
+  const isValid = activeTab === 'login'
+    ? (isEmailValid && isPasswordValid)
+    : (isNameValid && isEmailValid && isPasswordValid);
+
   const isDesktop = isWeb && width >= 900;
 
-  const handleSendOtp = async () => {
-    if (!isValid || isSending) return;
+  const handleAuthSubmit = async () => {
+    if (!isValid || isLoading) return;
     safeImpact(Haptics.ImpactFeedbackStyle.Medium);
-    setSending(true);
+    setLoading(true);
     setError(null);
     try {
-      await requestOtp(phone);
-      router.push({ pathname: '/(auth)/otp-verify' as any, params: { phone } });
+      if (activeTab === 'login') {
+        await login(email, password);
+      } else {
+        if (isAnonymousGuest) {
+          await upgradeGuestAccount(email, name, password, true);
+        } else {
+          await register(name, email, password);
+        }
+      }
+      router.replace('/(tabs)' as any);
     } catch (err: any) {
-      setError(err?.message ?? 'Failed to send OTP. Please try again.');
+      setError(err?.message ?? 'Authentication failed. Please check your credentials.');
     } finally {
-      setSending(false);
+      setLoading(false);
     }
   };
 
@@ -74,28 +84,18 @@ export default function PhoneAuthScreen() {
     router.replace('/(tabs)' as any);
   };
 
-  const handleGooglePress = () => {
+  const handleGooglePress = async () => {
     safeImpact(Haptics.ImpactFeedbackStyle.Light);
-    setGoogleToast(true);
-    setTimeout(() => setGoogleToast(false), 2800);
+    setLoading(true);
+    setError(null);
+    try {
+      setError('Google Sign-In is not available yet. Please use email/password or continue as guest.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const goToLanding = () => router.back();
-
-  // ── Google Coming Soon Toast ──────────────────────────────────────────────
-  const GoogleComingSoon = () => googleToast ? (
-    <View style={{
-      position: 'absolute', top: isWeb ? 20 : 60, alignSelf: 'center',
-      backgroundColor: isDarkMode ? '#1E1E2E' : '#1F2937',
-      paddingHorizontal: 18, paddingVertical: 10,
-      borderRadius: 24, zIndex: 999,
-      shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 12, elevation: 8,
-    }}>
-      <Text style={{ color: '#FFF', fontSize: 13, fontFamily: 'PlusJakartaSans_500Medium' }}>
-        🔜 Google Sign-In coming soon. Please use OTP for now.
-      </Text>
-    </View>
-  ) : null;
 
   // ── Guest Limitations Card ────────────────────────────────────────────────
   const GuestLimitations = () => (
@@ -145,17 +145,155 @@ export default function PhoneAuthScreen() {
   // ── Form Card (shared between mobile and web right panel) ─────────────────
   const FormCard = () => (
     <View style={[styles.formCard, isDesktop && styles.formCardDesktop, { backgroundColor: isDarkMode ? '#111' : '#fff' }]}>
+      {/* Back and Language top bar */}
+      <View style={styles.formHeader}>
+        <TouchableOpacity onPress={() => router.replace('/(auth)/splash' as any)} style={styles.backButton} activeOpacity={0.7}>
+          <ArrowLeft size={16} color={Colors.orange} strokeWidth={2.5} />
+          <Text style={[styles.backButtonText, { color: C.text }]}>{t.back || 'Back'}</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity onPress={() => setOverlay('language')} style={[styles.langSelector, { borderColor: C.surfaceBorder }]} activeOpacity={0.7}>
+          <Globe size={14} color={Colors.orange} strokeWidth={2.5} />
+          <Text style={[styles.langSelectorText, { color: C.text }]}>
+            {selectedLanguage.code.split('-')[0].toUpperCase()}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
       {/* Logo */}
       <View style={styles.logoWrap}>
         <Logo size={56} showText stacked lightBg={!isDarkMode} />
       </View>
 
-      <Text style={[styles.title, { color: C.text }]}>{t.phoneAuthTitle}</Text>
-      <Text style={[styles.sub, { color: C.textSecondary }]}>
-        {t.phoneAuthSub}
+      <Text style={[styles.title, { color: C.text, textAlign: 'center' }]}>
+        {activeTab === 'login' ? 'Welcome Back' : 'Create Account'}
+      </Text>
+      <Text style={[styles.sub, { color: C.textSecondary, textAlign: 'center', marginBottom: 24 }]}>
+        {activeTab === 'login' ? 'Sign in to access your chat history' : 'Register to get secure AI legal assistance'}
       </Text>
 
-      {/* ── Google Sign-In Button (Coming Soon) ── */}
+      {/* ── Segmented Tabs ── */}
+      <View style={[styles.tabContainer, { backgroundColor: isDarkMode ? '#18181B' : '#F3F4F6' }]}>
+        <TouchableOpacity
+          onPress={() => { setActiveTab('login'); setError(null); }}
+          style={[styles.tabButton, activeTab === 'login' && { backgroundColor: Colors.orange }]}
+          activeOpacity={0.8}
+        >
+          <Text style={[styles.tabText, { color: activeTab === 'login' ? '#FFF' : C.textSecondary }]}>Login</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => { setActiveTab('register'); setError(null); }}
+          style={[styles.tabButton, activeTab === 'register' && { backgroundColor: Colors.orange }]}
+          activeOpacity={0.8}
+        >
+          <Text style={[styles.tabText, { color: activeTab === 'register' ? '#FFF' : C.textSecondary }]}>Register</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Name Input (Register Only) */}
+      {activeTab === 'register' && (
+        <View style={[styles.inputWrap, {
+          backgroundColor: isDarkMode ? '#17171A' : '#F8F9FA',
+          borderColor: error ? '#EF4444' : isNameValid ? Colors.orange : C.surfaceBorder,
+        }]}>
+          <View style={[styles.prefix, { borderRightColor: C.surfaceBorder }]}>
+            <UserIcon size={16} color={C.textSecondary} />
+          </View>
+          <TextInput
+            ref={nameRef}
+            style={[styles.input, { color: C.text }]}
+            placeholder="Your Username"
+            placeholderTextColor={C.textHint}
+            value={name}
+            onChangeText={(val) => { setName(val); if (error) setError(null); }}
+            autoFocus
+            accessibilityLabel="Username input"
+            returnKeyType="next"
+            onSubmitEditing={() => emailRef.current?.focus()}
+          />
+        </View>
+      )}
+
+      {/* Email input */}
+      <View style={[styles.inputWrap, {
+        backgroundColor: isDarkMode ? '#17171A' : '#F8F9FA',
+        borderColor: error ? '#EF4444' : isEmailValid ? Colors.orange : C.surfaceBorder,
+      }]}>
+        <View style={[styles.prefix, { borderRightColor: C.surfaceBorder }]}>
+          <Mail size={16} color={C.textSecondary} />
+        </View>
+        <TextInput
+          ref={emailRef}
+          style={[styles.input, { color: C.text }]}
+          placeholder="your.email@example.com"
+          placeholderTextColor={C.textHint}
+          keyboardType="email-address"
+          autoCapitalize="none"
+          value={email}
+          onChangeText={(val) => { setEmail(val.trim()); if (error) setError(null); }}
+          accessibilityLabel="Email input"
+          returnKeyType="next"
+          onSubmitEditing={() => passwordRef.current?.focus()}
+        />
+        {email.length > 0 && (
+          <TouchableOpacity
+            onPress={() => { setEmail(''); setError(null); emailRef.current?.focus(); }}
+            style={{ padding: 10 }}
+          >
+            <X size={14} color={C.textHint} strokeWidth={2} />
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {/* Password input */}
+      <View style={[styles.inputWrap, {
+        backgroundColor: isDarkMode ? '#17171A' : '#F8F9FA',
+        borderColor: error ? '#EF4444' : isPasswordValid ? Colors.orange : C.surfaceBorder,
+      }]}>
+        <View style={[styles.prefix, { borderRightColor: C.surfaceBorder }]}>
+          <Lock size={16} color={C.textSecondary} />
+        </View>
+        <TextInput
+          ref={passwordRef}
+          style={[styles.input, { color: C.text }]}
+          placeholder="Password (min 6 chars)"
+          placeholderTextColor={C.textHint}
+          secureTextEntry
+          value={password}
+          onChangeText={(val) => { setPassword(val); if (error) setError(null); }}
+          accessibilityLabel="Password input"
+          returnKeyType="done"
+          onSubmitEditing={handleAuthSubmit}
+        />
+      </View>
+
+      {error ? <Text style={styles.errorText}>{error}</Text> : null}
+
+      {/* CTA Auth Action Button */}
+      <TouchableOpacity
+        onPress={handleAuthSubmit}
+        disabled={!isValid || isLoading}
+        activeOpacity={0.85}
+        style={[styles.cta, {
+          backgroundColor: isValid && !isLoading ? Colors.orange : (isDarkMode ? '#2A2A2A' : '#E5E7EB'),
+        }]}
+        accessibilityRole="button"
+      >
+        {isLoading ? (
+          <ActivityIndicator color="#FFFFFF" />
+        ) : (
+          <>
+            <Text style={[styles.ctaText, { color: isValid ? '#FFFFFF' : C.textHint }]}>
+              {activeTab === 'login' ? 'Sign In' : 'Sign Up'}
+            </Text>
+            {isValid && <ArrowRight size={16} color="#FFFFFF" strokeWidth={2} />}
+          </>
+        )}
+      </TouchableOpacity>
+
+      <Divider />
+
+      {/* ── Google Sign-In Button ── */}
       <TouchableOpacity
         onPress={handleGooglePress}
         activeOpacity={0.7}
@@ -166,78 +304,12 @@ export default function PhoneAuthScreen() {
           backgroundColor: isDarkMode ? '#18181B' : '#F3F4F6',
           borderWidth: 1.5,
           borderColor: isDarkMode ? '#2A2A2A' : '#E5E7EB',
-          opacity: 0.65,
         }}
       >
-        <Text style={{ fontSize: 20, lineHeight: 24, fontFamily: 'PlusJakartaSans_700Bold', color: '#9CA3AF' }}>G</Text>
-        <Text style={{ fontSize: 15, fontFamily: 'PlusJakartaSans_600SemiBold', color: C.textSecondary }}>
+        <Text style={{ fontSize: 16, fontFamily: 'PlusJakartaSans_700Bold', color: '#4285F4' }}>G</Text>
+        <Text style={{ fontSize: 15, fontFamily: 'PlusJakartaSans_600SemiBold', color: C.text }}>
           {t.continueWithGoogle}
         </Text>
-        <View style={{ backgroundColor: '#F97316', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20 }}>
-          <Text style={{ fontSize: 9, fontFamily: 'PlusJakartaSans_700Bold', color: '#FFF', letterSpacing: 0.5 }}>SOON</Text>
-        </View>
-      </TouchableOpacity>
-
-      <Divider />
-
-      {/* Phone input */}
-      <View style={[styles.inputWrap, {
-        backgroundColor: isDarkMode ? '#17171A' : '#F8F9FA',
-        borderColor: error ? '#EF4444' : isValid ? Colors.orange : C.surfaceBorder,
-      }]}>
-        <View style={[styles.prefix, { borderRightColor: C.surfaceBorder }]}>
-          <Text style={styles.flag}>🇮🇳</Text>
-          <Text style={[styles.prefixText, { color: C.text }]}>+91</Text>
-        </View>
-        <TextInput
-          ref={phoneRef}
-          style={[styles.input, { color: C.text }]}
-          placeholder="98765 43210"
-          placeholderTextColor={C.textHint}
-          keyboardType="number-pad"
-          value={phone}
-          onChangeText={(val) => {
-            setPhone(val.replace(/[^0-9]/g, '').slice(0, 10));
-            if (error) setError(null);
-          }}
-          maxLength={10}
-          autoFocus
-          accessibilityLabel="Mobile number input"
-          accessibilityHint="Enter your 10-digit Indian mobile number"
-          returnKeyType="done"
-          onSubmitEditing={handleSendOtp}
-        />
-        {phone.length > 0 && (
-          <TouchableOpacity
-            onPress={() => { setPhone(''); setError(null); phoneRef.current?.focus(); }}
-            style={{ padding: 10 }}
-          >
-            <X size={14} color={C.textHint} strokeWidth={2} />
-          </TouchableOpacity>
-        )}
-      </View>
-
-      {error ? <Text style={styles.errorText}>{error}</Text> : null}
-
-      <TouchableOpacity
-        onPress={handleSendOtp}
-        disabled={!isValid || isSending}
-        activeOpacity={0.85}
-        style={[styles.cta, {
-          backgroundColor: isValid && !isSending ? Colors.orange : (isDarkMode ? '#2A2A2A' : '#E5E7EB'),
-        }]}
-        accessibilityRole="button"
-        accessibilityLabel={t.sendOtp}
-        accessibilityState={{ disabled: !isValid || isSending }}
-      >
-        {isSending ? (
-          <ActivityIndicator color="#FFFFFF" />
-        ) : (
-          <>
-            <Text style={[styles.ctaText, { color: isValid ? '#FFFFFF' : C.textHint }]}>{t.sendOtp}</Text>
-            {isValid && <ArrowRight size={16} color="#FFFFFF" strokeWidth={2} />}
-          </>
-        )}
       </TouchableOpacity>
 
       {/* Guest button + limitations card */}
@@ -256,17 +328,13 @@ export default function PhoneAuthScreen() {
         </TouchableOpacity>
       )}
 
-      <Text style={[styles.disclaimerText, { color: C.textHint, marginTop: 16 }]}>
-        By proceeding, you agree to NeethiMitra's Terms of Service and Privacy Policy.
-      </Text>
     </View>
   );
 
-  // ── Desktop: split-screen ─────────────────────────────────────────────────
+  // ── Desktop Layout ─────────────────────────────────────────────────────────
   if (isDesktop) {
     return (
       <View style={styles.desktopRoot}>
-        <GoogleComingSoon />
         {/* Left branding panel */}
         <LinearGradient
           colors={['#0A3D1F', '#15803D', '#1A5C2A']}
@@ -319,10 +387,9 @@ export default function PhoneAuthScreen() {
     );
   }
 
-  // ── Mobile layout ──────────────────────────────────────────────────────────
+  // ── Mobile Layout ──────────────────────────────────────────────────────────
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: C.background }]}>
-      <GoogleComingSoon />
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -333,129 +400,50 @@ export default function PhoneAuthScreen() {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          <View style={styles.logoWrap}>
-            <Logo size={60} showText stacked lightBg />
-          </View>
-          <Text style={[styles.title, { color: C.text }]}>{t.phoneAuthTitle}</Text>
-          <Text style={[styles.sub, { color: C.textSecondary }]}>{t.phoneAuthSub}</Text>
-
-          {/* Google Sign-In (Coming Soon) */}
-          <TouchableOpacity
-            onPress={handleGooglePress}
-            activeOpacity={0.7}
-            style={{
-              height: 52, borderRadius: 14,
-              flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-              gap: 10, marginBottom: 14,
-              backgroundColor: isDarkMode ? '#18181B' : '#F3F4F6',
-              borderWidth: 1.5,
-              borderColor: isDarkMode ? '#2A2A2A' : '#E5E7EB',
-              opacity: 0.65,
-            }}
-          >
-            <Text style={{ fontSize: 20, lineHeight: 24, fontFamily: 'PlusJakartaSans_700Bold', color: '#9CA3AF' }}>G</Text>
-            <Text style={{ fontSize: 15, fontFamily: 'PlusJakartaSans_600SemiBold', color: C.textSecondary }}>
-              {t.continueWithGoogle}
-            </Text>
-            <View style={{ backgroundColor: '#F97316', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20 }}>
-              <Text style={{ fontSize: 9, fontFamily: 'PlusJakartaSans_700Bold', color: '#FFF', letterSpacing: 0.5 }}>SOON</Text>
-            </View>
-          </TouchableOpacity>
-
-          {/* Divider */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 14, gap: 10 }}>
-            <View style={{ flex: 1, height: 1, backgroundColor: isDarkMode ? '#2A2A2A' : '#E5E7EB' }} />
-            <Text style={{ fontSize: 12, fontFamily: 'PlusJakartaSans_500Medium', color: C.textSecondary }}>{t.orDivider}</Text>
-            <View style={{ flex: 1, height: 1, backgroundColor: isDarkMode ? '#2A2A2A' : '#E5E7EB' }} />
-          </View>
-
-          {/* Phone input */}
-          <View style={[styles.inputWrap, {
-            backgroundColor: isDarkMode ? '#17171A' : '#F8F9FA',
-            borderColor: error ? '#EF4444' : isValid ? Colors.orange : C.surfaceBorder,
-          }]}>
-            <View style={[styles.prefix, { borderRightColor: C.surfaceBorder }]}>
-              <Text style={styles.flag}>🇮🇳</Text>
-              <Text style={[styles.prefixText, { color: C.text }]}>+91</Text>
-            </View>
-            <TextInput
-              ref={phoneRef}
-              style={[styles.input, { color: C.text }]}
-              placeholder="98765 43210"
-              placeholderTextColor={C.textHint}
-              keyboardType="number-pad"
-              value={phone}
-              onChangeText={(val) => {
-                setPhone(val.replace(/[^0-9]/g, '').slice(0, 10));
-                if (error) setError(null);
-              }}
-              maxLength={10}
-              autoFocus
-              returnKeyType="done"
-              onSubmitEditing={handleSendOtp}
-            />
-            {phone.length > 0 && (
-              <TouchableOpacity
-                onPress={() => { setPhone(''); setError(null); phoneRef.current?.focus(); }}
-                style={{ padding: 10 }}
-              >
-                <X size={14} color={C.textHint} strokeWidth={2} />
-              </TouchableOpacity>
-            )}
-          </View>
-
-          {error ? <Text style={styles.errorText}>{error}</Text> : null}
-
-          <TouchableOpacity
-            onPress={handleSendOtp}
-            disabled={!isValid || isSending}
-            activeOpacity={0.85}
-            style={[styles.cta, {
-              backgroundColor: isValid && !isSending ? Colors.orange : (isDarkMode ? '#2A2A2A' : '#E5E7EB'),
-            }]}
-          >
-            {isSending ? <ActivityIndicator color="#FFFFFF" /> : (
-              <>
-                <Text style={[styles.ctaText, { color: isValid ? '#FFFFFF' : C.textHint }]}>{t.sendOtp}</Text>
-                {isValid && <ArrowRight size={16} color="#FFFFFF" strokeWidth={2} />}
-              </>
-            )}
-          </TouchableOpacity>
-
-          {/* Guest + limitations */}
-          <TouchableOpacity onPress={handleGuest} activeOpacity={0.7} style={styles.guestBtn}>
-            <Text style={[styles.guestText, { color: Colors.orange }]}>{t.guestQueryHint}</Text>
-          </TouchableOpacity>
-          <GuestLimitations />
+          <FormCard />
         </ScrollView>
         <View style={[styles.disclaimer, { borderTopColor: C.surfaceBorder }]}>
           <Text style={[styles.disclaimerText, { color: C.textHint }]}>
             By proceeding, you agree to NeethiMitra's Terms of Service and Privacy Policy.
           </Text>
         </View>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
-  );
-}
 
 const styles = StyleSheet.create({
   // Mobile
   container: { flex: 1 },
   scroll: { paddingHorizontal: 24, paddingTop: 40, paddingBottom: 20, flexGrow: 1 },
-  logoWrap: { alignItems: 'center', marginBottom: 36 },
+  logoWrap: { alignItems: 'center', marginBottom: 20 },
   title:   { fontSize: 26, fontFamily: 'PlusJakartaSans_700Bold', marginBottom: 8 },
   sub:     { fontSize: 14, fontFamily: 'PlusJakartaSans_400Regular', lineHeight: 21, marginBottom: 20 },
+  
+  // Tabs Style
+  tabContainer: {
+    flexDirection: 'row',
+    height: 48,
+    borderRadius: 12,
+    padding: 4,
+    marginBottom: 20,
+  },
+  tabButton: {
+    flex: 1,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tabText: {
+    fontSize: 14,
+    fontFamily: 'PlusJakartaSans_700Bold',
+  },
+
   inputWrap: {
     flexDirection: 'row', alignItems: 'center',
     height: 56, borderRadius: 14, borderWidth: 1.5, marginBottom: 14, overflow: 'hidden',
   },
   prefix: {
     flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 14, gap: 6,
-    borderRightWidth: 1, height: '100%',
+    paddingHorizontal: 14, height: '100%',
+    borderRightWidth: 1,
   },
-  flag:       { fontSize: 18 },
-  prefixText: { fontSize: 15, fontFamily: 'PlusJakartaSans_700Bold' },
   input: {
     flex: 1, height: '100%', paddingHorizontal: 14,
     fontSize: 16, fontFamily: 'PlusJakartaSans_600SemiBold',
@@ -463,7 +451,7 @@ const styles = StyleSheet.create({
   errorText: { fontSize: 13, fontFamily: 'PlusJakartaSans_400Regular', color: '#EF4444', marginBottom: 10, textAlign: 'center' },
   cta: {
     height: 52, borderRadius: 14, flexDirection: 'row',
-    alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 12,
+    alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 12, marginTop: 6,
   },
   ctaText:  { fontSize: 15, fontFamily: 'PlusJakartaSans_700Bold', letterSpacing: 0.3 },
   guestBtn: { paddingVertical: 10, alignItems: 'center' },
@@ -489,7 +477,7 @@ const styles = StyleSheet.create({
   desktopRightContent: { flex: 1, justifyContent: 'center', padding: 48, minHeight: '100%' },
 
   // Form card (desktop)
-  formCard: { borderRadius: 24, padding: 36 },
+  formCard: { borderRadius: 24, padding: 36, width: '100%' },
   formCardDesktop: {
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
@@ -500,4 +488,36 @@ const styles = StyleSheet.create({
     borderColor: '#F3F4F6',
   },
   backToLanding: { alignItems: 'center', marginTop: 12 },
+  formHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+    width: '100%',
+  },
+  backButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+  },
+  backButtonText: {
+    fontSize: 13,
+    fontFamily: 'PlusJakartaSans_600SemiBold',
+  },
+  langSelector: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  langSelectorText: {
+    fontSize: 11,
+    fontFamily: 'PlusJakartaSans_700Bold',
+  },
 });

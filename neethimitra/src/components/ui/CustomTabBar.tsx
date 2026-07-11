@@ -54,70 +54,7 @@ export function CustomTabBar({ state, descriptors, navigation }: any) {
   if (currentRoute.startsWith('chat/') || currentRoute === 'chat') return null;
 
   const isWeb = Platform.OS === 'web';
-
-  // ── Web Platform Layout (Floating Mic FAB only, no green tab bar) ─────────
-  if (isWeb) {
-    const speakRoute = state.routes.find((r: any) => r.name === 'speak');
-    if (!speakRoute) return null;
-
-    const handlePressMic = () => {
-      safeImpact(Haptics.ImpactFeedbackStyle.Medium);
-      setOverlay('recording');
-    };
-
-    return (
-      <View
-        style={{
-          position: 'absolute',
-          bottom: 32,
-          right: 32,
-          zIndex: 9999,
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        {/* Pulse rings */}
-        <Animated.View
-          style={[
-            pulseRingStyle,
-            {
-              position: 'absolute',
-              width: 72,
-              height: 72,
-              borderRadius: 36,
-              backgroundColor: 'rgba(234, 88, 12, 0.25)',
-              borderWidth: 1.5,
-              borderColor: 'rgba(234, 88, 12, 0.35)',
-            },
-          ]}
-        />
-        {/* Vibrant Orange Mic Button */}
-        <TouchableOpacity
-          onPress={handlePressMic}
-          activeOpacity={0.85}
-          style={{
-            width: 60,
-            height: 60,
-            borderRadius: 30,
-            backgroundColor: '#EA580C',
-            alignItems: 'center',
-            justifyContent: 'center',
-            shadowColor: '#EA580C',
-            shadowOffset: { width: 0, height: 6 },
-            shadowOpacity: 0.4,
-            shadowRadius: 12,
-            elevation: 10,
-            borderWidth: 2,
-            borderColor: 'rgba(255,255,255,0.25)',
-          }}
-          accessibilityLabel="Voice Search"
-          accessibilityRole="button"
-        >
-          <Mic size={26} color="#FFFFFF" strokeWidth={2} />
-        </TouchableOpacity>
-      </View>
-    );
-  }
+  if (isWeb) return null;
 
   const BAR_HEIGHT = 58;
   const bottomPad  = insets.bottom > 0 ? insets.bottom / 2 : 8;

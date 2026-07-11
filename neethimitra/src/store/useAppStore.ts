@@ -4,17 +4,13 @@ import { Platform } from 'react-native';
 import { LANGUAGES, Language, DEFAULT_LANGUAGE } from '@constants/languages';
 import * as SecureStore from 'expo-secure-store';
 
-// ─── API_BASE_URL ─────────────────────────────────────────────────────────
-// Web browser (Chrome) : uses localhost automatically
-// Android Emulator     : 10.0.2.2 maps to the host machine's localhost
-// iOS Simulator        : localhost also works
-// Physical device      : Change to your PC's LAN IP, e.g. 'http://192.168.1.5:8000'
-const FALLBACK_URL = Platform.OS === 'web' ? 'http://127.0.0.1:8000' : 'http://10.0.2.2:8000';
-export const API_BASE_URL = (() => {
-  const url = process.env.EXPO_PUBLIC_API_URL || FALLBACK_URL;
-  try { new URL(url); } catch { return FALLBACK_URL; }
-  return url;
-})();
+import { apiClient, API_BASE_URL } from '@utils/apiClient';
+
+// Helper to prevent Log Injection (CWE-117): Sanitize variable values printed in logs
+function safeLogVal(val: unknown): string {
+  const str = JSON.stringify(val) ?? '';
+  return str.replace(/[\r\n\t]/g, ' ').slice(0, 200);
+}
 
 export type Category = {
   id: string;
@@ -229,7 +225,7 @@ export const useAppStore = create<AppState>()(
         }));
 
         try {
-          const response = await fetch(`${API_BASE_URL}/api/sessions`, {
+          const response = await apiClient('/api/sessions', {
             method: 'POST',
             headers: authHeaders(authToken),
             body: JSON.stringify({
@@ -251,10 +247,10 @@ export const useAppStore = create<AppState>()(
               };
             });
           } else {
-            console.warn('startSession: backend returned', response.status);
+            console.warn('startSession: backend returned', safeLogVal(response.status));
           }
         } catch (err) {
-          console.warn('startSession: offline mode, using local id:', err);
+          console.warn('startSession: offline mode, using local id:', safeLogVal(err));
         }
       },
 
@@ -265,7 +261,7 @@ export const useAppStore = create<AppState>()(
         if (!authToken) return;
         get().fetchUserDocuments().catch(() => {});
         try {
-          const response = await fetch(`${API_BASE_URL}/api/sessions`, {
+          const response = await apiClient('/api/sessions', {
             headers: authHeaders(authToken),
           });
           if (response.ok) {
@@ -296,14 +292,14 @@ export const useAppStore = create<AppState>()(
             });
           }
         } catch (err) {
-          console.warn('fetchSessions: failed (offline?):', err);
+          console.warn('fetchSessions: failed (offline?):', safeLogVal(err));
         }
       },
 
       loadSession: async (sessionId) => {
         try {
           const { authToken } = get();
-          const response = await fetch(`${API_BASE_URL}/api/sessions/${sessionId}`, {
+          const response = await apiClient(`/api/sessions/${sessionId}`, {
             headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : {},
           });
           if (response.ok) {
@@ -329,7 +325,7 @@ export const useAppStore = create<AppState>()(
             set({ activeSession: loaded });
           }
         } catch (err) {
-          console.warn('loadSession: failed:', err);
+          console.warn('loadSession: failed:', safeLogVal(err));
         }
       },
 
@@ -357,8 +353,8 @@ export const useAppStore = create<AppState>()(
         set({ isProcessing: true });
 
         try {
-          const response = await fetch(
-            `${API_BASE_URL}/api/sessions/${activeSession.id}/messages`,
+          const response = await apiClient(
+            `/api/sessions/${activeSession.id}/messages`,
             {
               method: 'POST',
               headers: authHeaders(authToken),
@@ -397,7 +393,7 @@ export const useAppStore = create<AppState>()(
             throw new Error(`Backend error: ${response.status}`);
           }
         } catch (err) {
-          console.warn('sendMessageToBackend: using offline mock.');
+          console.warn('sendMessageToBackend: using offline mock.', safeLogVal(err));
           // BUG-F034 FIX: removed early set({ isProcessing: false }) here;
           // finally always runs, so it handles the cleanup once.
           setTimeout(() => {
@@ -458,8 +454,8 @@ export const useAppStore = create<AppState>()(
           if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
           // Do NOT set Content-Type — fetch sets it automatically for FormData (with boundary)
 
-          const response = await fetch(
-            `${API_BASE_URL}/api/sessions/${activeSession.id}/messages/voice`,
+          const response = await apiClient(
+            `/api/sessions/${activeSession.id}/messages/voice`,
             { method: 'POST', headers, body: formData }
           );
 
@@ -494,7 +490,7 @@ export const useAppStore = create<AppState>()(
             throw new Error(`Voice endpoint error: ${response.status}`);
           }
         } catch (err) {
-          console.warn('sendVoiceRecording: failed');
+          console.warn('sendVoiceRecording: failed:', safeLogVal(err));
           const aiMsg: Message = {
             id: (Date.now() + 1).toString(),
             role: 'assistant',
@@ -522,7 +518,7 @@ export const useAppStore = create<AppState>()(
           const headers: Record<string, string> = {};
           if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
 
-          const response = await fetch(`${API_BASE_URL}/api/sessions/${activeSession.id}/complaint`, {
+          const response = await apiClient(`/api/sessions/${activeSession.id}/complaint`, {
             method: 'POST',
             headers,
           });
@@ -532,7 +528,7 @@ export const useAppStore = create<AppState>()(
             return `${API_BASE_URL}${data.pdf_path}`;
           }
         } catch (err) {
-          console.warn('generateComplaint: failed:', err);
+          console.warn('generateComplaint: failed:', safeLogVal(err));
         }
         return null;
       },
@@ -547,7 +543,7 @@ export const useAppStore = create<AppState>()(
           };
           if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
 
-          const response = await fetch(`${API_BASE_URL}/api/sessions/${activeSession.id}/messages/${messageId}/speak`, {
+          const response = await apiClient(`/api/sessions/${activeSession.id}/messages/${messageId}/speak`, {
             method: 'POST',
             headers,
           });
@@ -581,7 +577,7 @@ export const useAppStore = create<AppState>()(
             return fullAudioUrl;
           }
         } catch (err) {
-          console.warn('generateMessageAudio: failed:', err);
+          console.warn('generateMessageAudio: failed:', safeLogVal(err));
         }
         return undefined;
       },
@@ -593,7 +589,7 @@ export const useAppStore = create<AppState>()(
         let sessionId = activeSession ? activeSession.id : null;
         
         if (!sessionId) {
-          await get().startSession({ id: 'general', label: 'General Query', emoji: '💬', description: '', colorKey: 'general' });
+          await get().startSession({ id: 'general', name: 'General Query' } as any);
           const newActive = get().activeSession;
           sessionId = newActive ? newActive.id : 'general_session';
         }
@@ -617,7 +613,7 @@ export const useAppStore = create<AppState>()(
           const uploadHeaders: Record<string, string> = {};
           if (authToken) uploadHeaders['Authorization'] = `Bearer ${authToken}`;
 
-          const apiResponse = await fetch(`${API_BASE_URL}/api/sessions/${sessionId}/documents`, {
+          const apiResponse = await apiClient(`/api/sessions/${sessionId}/documents`, {
             method: 'POST',
             headers: uploadHeaders,
             body: formData,
@@ -644,7 +640,7 @@ export const useAppStore = create<AppState>()(
             throw new Error(`Upload failed: ${err}`);
           }
         } catch (err) {
-          console.warn('uploadDocument: upload failed:', err);
+          console.warn('uploadDocument: upload failed:', safeLogVal(err));
           set((s) => ({
             documents: s.documents.map((d) =>
               d.id === newDoc.id ? { ...d, status: 'failed' } : d
@@ -659,7 +655,7 @@ export const useAppStore = create<AppState>()(
           const headers: Record<string, string> = {};
           if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
 
-          const response = await fetch(`${API_BASE_URL}/api/sessions/user/all-docs`, {
+          const response = await apiClient('/api/sessions/user/all-docs', {
             headers,
           });
 
@@ -678,7 +674,7 @@ export const useAppStore = create<AppState>()(
             set({ documents: mapped });
           }
         } catch (err) {
-          console.warn('fetchUserDocuments: failed:', err);
+          console.warn('fetchUserDocuments: failed:', safeLogVal(err));
         }
       },
 
@@ -728,12 +724,12 @@ export const useAppStore = create<AppState>()(
             get().fetchSessions().catch(() => {});
           }
         } catch (e) {
-          console.warn('checkAuthStatus: failed to read from SecureStore:', e);
+          console.warn('checkAuthStatus: failed to read from SecureStore:', safeLogVal(e));
         }
       },
 
       register: async (name, email, password) => {
-        const response = await fetch(`${API_BASE_URL}/api/auth/register`, {
+        const response = await apiClient('/api/auth/register', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -779,7 +775,7 @@ export const useAppStore = create<AppState>()(
           .map((key) => encodeURIComponent(key) + '=' + encodeURIComponent(details[key]))
           .join('&');
 
-        const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
+        const response = await apiClient('/api/auth/login', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
@@ -817,7 +813,7 @@ export const useAppStore = create<AppState>()(
 
       upgradeGuestAccount: async (email, name, password, migrateHistory) => {
         const { authToken } = get();
-        const response = await fetch(`${API_BASE_URL}/api/auth/guest/upgrade`, {
+        const response = await apiClient('/api/auth/guest/upgrade', {
           method: 'POST',
           headers: authHeaders(authToken),
           body: JSON.stringify({ email, name, password, migrate_history: migrateHistory }),
@@ -854,7 +850,7 @@ export const useAppStore = create<AppState>()(
 
       // ── Google Login — calls real backend /api/auth/google ───────────
       loginWithGoogle: async (idToken: string, preferredLanguage?: string) => {
-        const response = await fetch(`${API_BASE_URL}/api/auth/google`, {
+        const response = await apiClient('/api/auth/google', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -893,13 +889,11 @@ export const useAppStore = create<AppState>()(
       logout: async () => {
         const { authToken, refreshToken } = get();
         if (authToken && refreshToken) {
-          try {
-            await fetch(`${API_BASE_URL}/api/auth/logout`, {
-              method: 'POST',
-              headers: authHeaders(authToken),
-              body: JSON.stringify({ refresh_token: refreshToken }),
-            });
-          } catch { /* best-effort revocation */ }
+          apiClient('/api/auth/logout', {
+            method: 'POST',
+            headers: authHeaders(authToken),
+            body: JSON.stringify({ refresh_token: refreshToken }),
+          }).catch(() => {});
         }
         try {
           await webSecureStore.deleteItemAsync('auth_token');
@@ -927,7 +921,7 @@ export const useAppStore = create<AppState>()(
 
       enableGuest: async () => {
         try {
-          const response = await fetch(`${API_BASE_URL}/api/auth/guest`, { method: 'POST' });
+          const response = await apiClient('/api/auth/guest', { method: 'POST' });
           if (response.ok) {
             const data = await response.json();
             await webSecureStore.setItemAsync('auth_token', data.access_token);

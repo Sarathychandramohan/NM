@@ -45,24 +45,23 @@ async def detect_language(text: str) -> str:
     return _heuristic_detect(text)
 
 
+HEURISTIC_SCRIPTS = {
+    "ta-IN": "அஆஇஈஉஊஎஏஐஒஓகஙசஞடணதநபமயரலவழளறன",
+    "te-IN": "అఆఇఈఉఊఎఏఐఒఓకగచజటడతదపబమయరలవశಷసహ",
+    "kn-IN": "ಅಆಇಈಉಊಎಏಐಒಓಕಗಚಜಟಡತದಪಬಮಯರಲವಶಷಸಹ",
+    "ml-IN": "അആഇഈഉഊഎഏഐഒഓകഗചജടഡതദപബമയരലവശഷസഹ",
+    "hi-IN": "अआइईउऊएऐओऔकखगघचछजझटठडढतथदधपफबभमयरलवशषसह",
+    "pa-IN": "ਅਆਇਈਉਊਏਐਓਔਕਗਚਜਟਡਤਦਪਬਮਯਰਲਵਸ਼ਸਹ",
+    "gu-IN": "અઆઇઈઉઊએઐઓઔકગચજટડતદપબમ",
+    "od-IN": "ଅଆଇଈଉଊଏଐଓଔକଗଚଜଟଡତଦପବମ",
+    "bn-IN": "অআইঈউঊএঐওঔকগচজটডতদপবম"
+}
+
+
 def _heuristic_detect(text: str) -> str:
     """Script-based heuristic language detection as a fallback."""
-    if any(c in text for c in "அஆஇஈஉஊஎஏஐஒஓகங சஞடணதநபமயரலவழளறன"):
-        return "ta-IN"
-    if any(c in text for c in "అఆఇఈఉఊఎఏఐఒఓకగచజటడతదపబమయరలవశషసహ"):
-        return "te-IN"
-    if any(c in text for c in "ಅಆಇಈಉಊಎಏಐಒಓಕಗಚಜಟಡತದಪಬಮಯರಲವಶಷಸಹ"):
-        return "kn-IN"
-    if any(c in text for c in "അആഇഈഉഊഎഏഐഒഓകഗചജടഡതദപബമയരലവശഷസഹ"):
-        return "ml-IN"
-    if any(c in text for c in "अआइईउऊएऐओऔकखगघचछजझटठडढतथदधपफबभमयरलवशषसह"):
-        return "hi-IN"
-    if any(c in text for c in "ਅਆਇਈਉਊਏਐਓਔਕਗਚਜਟਡਤਦਪਬਮਯਰਲਵਸ਼ਸਹ"):
-        return "pa-IN"
-    if any(c in text for c in "અઆઇઈઉઊએઐઓઔકગચજટડતદપબમ"):
-        return "gu-IN"
-    if any(c in text for c in "ଅଆଇଈଉଊଏଐଓଔକଗଚଜଟଡତଦପବମ"):
-        return "od-IN"
-    if any(c in text for c in "অআইঈউঊএঐওঔকগচজটডতদপবম"):
-        return "bn-IN"
+    text_chars = set(text)
+    for lang_code, script_chars in HEURISTIC_SCRIPTS.items():
+        if any(c in text_chars for c in script_chars):
+            return lang_code
     return "en-IN"

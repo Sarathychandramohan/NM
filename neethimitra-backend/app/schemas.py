@@ -5,7 +5,7 @@ from datetime import datetime
 # ─── AUTH ──────────────────────────────────────────────────────────────────────
 
 class UserCreate(BaseModel):
-    phone: str
+    email: EmailStr
     name: str
     password: str
     preferred_language: Optional[str] = "en-IN"
@@ -20,10 +20,16 @@ class UserProfileUpdate(BaseModel):
     name: Optional[str] = None
     preferred_language: Optional[str] = None
 
+class AvatarUpdateRequest(BaseModel):
+    """PATCH /api/auth/me/avatar — update profile picture URL with validation."""
+    profile_image: str
+
+
 class GuestUpgradeRequest(BaseModel):
-    """POST /api/auth/guest/upgrade — upgrade guest to phone-verified account."""
-    phone: str
-    otp: str
+    """POST /api/auth/guest/upgrade — upgrade guest to registered account."""
+    email: EmailStr
+    name: str
+    password: str
     migrate_history: bool = True   # True = move sessions to new account
 
 class GuestUpgradeResponse(BaseModel):
@@ -40,15 +46,6 @@ class TokenResponse(BaseModel):
 
 class RefreshTokenRequest(BaseModel):
     refresh_token: str
-
-class OTPRequest(BaseModel):
-    phone: str
-
-class OTPVerifyRequest(BaseModel):
-    phone: str
-    otp: str
-    name: Optional[str] = None
-    preferred_language: Optional[str] = "en-IN"
 
 class GuestResponse(BaseModel):
     access_token: str
@@ -90,11 +87,6 @@ class FullUserResponse(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
-
-class OTPRequestResponse(BaseModel):
-    success: bool
-    message: str
-    otp_hint: Optional[str] = None   # only populated in development mode
 
 class LogoutRequest(BaseModel):
     refresh_token: str
@@ -141,7 +133,6 @@ class SessionResponse(BaseModel):
     source: str = "app"
     last_activity_at: Optional[datetime] = None
     created_at: datetime
-    messages: List[MessageResponse] = []
 
     model_config = {"from_attributes": True}
 

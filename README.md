@@ -270,14 +270,20 @@ NeethiMithra AI/
 │   ├── app/
 │   │   ├── (tabs)/
 │   │   │   ├── index.tsx      ← Home (6 legal category cards)
-│   │   │   ├── chat.tsx       ← Chat screen (mic hold, text input, audio play)
-│   │   │   ├── history.tsx    ← Session list
-│   │   │   └── profile.tsx    ← User preferred language toggle
-│   │   ├── auth/              ← Auth Screens (Login, Register, Guest)
+│   │   │   ├── chat-history.tsx ← Consultation log list
+│   │   │   ├── my-files.tsx   ← Uploaded documents library & scanner
+│   │   │   ├── speak.tsx      ← Voice recorder entry redirection
+│   │   │   └── profile.tsx    ← Settings (Theme, Language, Text Size)
+│   │   ├── (auth)/            ← Onboarding, Splash, Phone entry & OTP validation
+│   │   ├── chat/
+│   │   │   └── [category].tsx ← Conversational legal query chat interface
 │   │   └── _layout.tsx        ← Navigation wrapper & context provider
-│   ├── components/            ← ChatBubble, AudioPlayer, VoiceRecorder, etc.
-│   ├── store/
-│   │   └── useAppStore.ts     ← Zustand store managing sessions and chats
+│   ├── src/
+│   │   ├── components/        ← UI overlays, home widgets, and WebAppShell wrapper
+│   │   ├── constants/         ← translations.ts (Master Static UI lookup)
+│   │   ├── store/
+│   │   │   └── useAppStore.ts ← Zustand store managing sessions and chats
+│   │   └── utils/             ← haptics.ts safe wrapper, etc.
 │   └── package.json
 │
 ├── neethimitra-backend/       ← Backend (FastAPI API Server)

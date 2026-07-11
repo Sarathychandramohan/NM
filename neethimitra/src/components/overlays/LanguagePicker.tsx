@@ -10,6 +10,7 @@ import Animated, {
   withSpring, 
   withTiming 
 } from 'react-native-reanimated';
+import { safeImpact } from '../../utils/haptics';
 import * as Haptics from 'expo-haptics';
 
 
@@ -90,7 +91,7 @@ export function LanguagePicker() {
   };
 
   const handleSelectLanguageNative = (lang: Language) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    safeImpact(Haptics.ImpactFeedbackStyle.Medium);
     setLanguage(lang);
     
     // Auto-close after 500ms
@@ -152,7 +153,7 @@ export function LanguagePicker() {
                   <TouchableOpacity
                     key={lang.code}
                     onPress={() => {
-                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                      safeImpact(Haptics.ImpactFeedbackStyle.Medium);
                       setTempLanguage(lang);
                     }}
                     style={{
@@ -236,7 +237,7 @@ export function LanguagePicker() {
               <TouchableOpacity
                 onPress={() => {
                   if (tempLanguage) {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                    safeImpact(Haptics.ImpactFeedbackStyle.Medium);
                     setLanguage(tempLanguage);
                   }
                   setOverlay(null);

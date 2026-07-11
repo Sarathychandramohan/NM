@@ -9,6 +9,7 @@ import Animated, {
   withSpring, 
   withTiming 
 } from 'react-native-reanimated';
+import { safeNotification } from '../../utils/haptics';
 import * as Haptics from 'expo-haptics';
 
 
@@ -35,7 +36,7 @@ export function ErrorSheet({
     if (isVisible) {
       bgOpacity.value = withTiming(0.4, { duration: 250 });
       translateY.value = withSpring(SCREEN_HEIGHT - 310, { damping: 24, stiffness: 300 });
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      safeNotification(Haptics.NotificationFeedbackType.Error);
     } else {
       bgOpacity.value = withTiming(0, { duration: 200 });
       translateY.value = withTiming(SCREEN_HEIGHT, { duration: 200 });

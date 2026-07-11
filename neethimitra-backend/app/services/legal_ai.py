@@ -106,7 +106,7 @@ async def _call_sarvam_llm(system_prompt: str, user_message: str, document_conte
     if document_context.strip():
         messages.append({
             "role": "user",
-            "content": f"Here is relevant document context the user has uploaded:\n\n{document_context[:3000]}"
+            "content": f"Here is relevant document context the user has uploaded:\n\n{document_context[:12000]}"
         })
         messages.append({
             "role": "assistant",

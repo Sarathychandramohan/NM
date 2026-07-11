@@ -1,7 +1,9 @@
+const nativewindPreset = require("nativewind/preset");
+
 /** @type {import('tailwindcss').Config} */
 module.exports = {
   content: ["./app/**/*.{js,jsx,ts,tsx}", "./src/**/*.{js,jsx,ts,tsx}"],
-  presets: [require("nativewind/preset")],
+  presets: [nativewindPreset],
   // Required for NativeWind web: allows setColorScheme() to toggle dark mode via class
   darkMode: 'class',
   theme: {

@@ -9,6 +9,7 @@ import Animated, {
   withSpring, 
   withTiming 
 } from 'react-native-reanimated';
+import { safeImpact } from '../../utils/haptics';
 import * as Haptics from 'expo-haptics';
 
 
@@ -51,7 +52,7 @@ export function DocumentUpload({ onCaptureImage, onPickImage, onPickDocument }: 
   };
 
   const handleAction = (callback: () => void) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    safeImpact(Haptics.ImpactFeedbackStyle.Light);
     setOverlay(null);
     setTimeout(() => {
       callback();

@@ -17,9 +17,13 @@ interface TopAppBarProps {
 export function TopAppBar({ title, showBack = false, onBack }: TopAppBarProps) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { selectedLanguage, setSidebarOpen, setOverlay, isDarkMode, textSize } = useAppStore();
+  const { selectedLanguage, setSidebarOpen, setOverlay, isDarkMode, textSize, userName, userEmail, isAnonymousGuest } = useAppStore();
   const scale = getTextScale(textSize);
   const C = isDarkMode ? Colors.dark : Colors.light;
+
+  const displayName = userName || 'Guest Citizen';
+  const displayPhone = isAnonymousGuest ? 'Guest' : (userEmail ? userEmail : 'Registered User');
+  const initial = displayName.charAt(0).toUpperCase();
 
   const handleBack = () => {
     if (onBack) onBack();
@@ -93,6 +97,16 @@ export function TopAppBar({ title, showBack = false, onBack }: TopAppBarProps) {
                 {selectedLanguage.code.split('-')[0].toUpperCase()}
               </Text>
             </TouchableOpacity>
+
+            <View style={{ marginRight: 4, alignItems: 'flex-end', justifyContent: 'center' }}>
+              <Text style={{ fontSize: 12 * scale, fontFamily: 'PlusJakartaSans_700Bold', color: C.text }} numberOfLines={1}>
+                {displayName}
+              </Text>
+              <Text style={{ fontSize: 9 * scale, fontFamily: 'PlusJakartaSans_400Regular', color: C.textSecondary }} numberOfLines={1}>
+                {displayPhone}
+              </Text>
+            </View>
+
             <TouchableOpacity
               onPress={() => router.push('/profile')}
               style={[
@@ -104,7 +118,7 @@ export function TopAppBar({ title, showBack = false, onBack }: TopAppBarProps) {
               ]}
               activeOpacity={0.8}
             >
-              <User size={15} color="#FFFFFF" strokeWidth={1.8} />
+              <Text style={{ fontSize: 14 * scale, fontFamily: 'PlusJakartaSans_700Bold', color: '#FFFFFF' }}>{initial}</Text>
             </TouchableOpacity>
           </View>
         ) : (

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Platform, useWindowDimensions } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, Platform, useWindowDimensions, StyleSheet } from 'react-native';
 import { useAppStore, getTextScale } from '@store/useAppStore';
 import { Mic, Paperclip } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -8,6 +8,13 @@ import { safeImpact } from '@/utils/haptics';
 import * as Haptics from 'expo-haptics';
 import { Colors } from '@constants/colors';
 import { UI_TRANSLATIONS } from '@constants/translations';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withRepeat,
+  withTiming,
+  Easing,
+} from 'react-native-reanimated';
 
 const isWeb = Platform.OS === 'web';
 
@@ -21,6 +28,26 @@ export function InputZone() {
   const scale = getTextScale(textSize);
 
   const isDesktop = isWeb && width >= 1024;
+
+  // Pulse ring animation for input mic button
+  const pulseScale = useSharedValue(1.0);
+  const pulseOpacity = useSharedValue(0.5);
+
+  React.useEffect(() => {
+    pulseScale.value = withRepeat(
+      withTiming(1.6, { duration: 1400, easing: Easing.out(Easing.ease) }),
+      -1, false
+    );
+    pulseOpacity.value = withRepeat(
+      withTiming(0, { duration: 1400, easing: Easing.out(Easing.ease) }),
+      -1, false
+    );
+  }, []);
+
+  const pulseRingStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: pulseScale.value }],
+    opacity: pulseOpacity.value,
+  }));
 
   const handleMicPress = async () => {
     safeImpact(Haptics.ImpactFeedbackStyle.Medium);
@@ -76,23 +103,47 @@ export function InputZone() {
         <View className="w-[1px] bg-zinc-200 dark:bg-zinc-800 my-1 mx-1" />
 
         {/* Right Side: Mic Button */}
-        <View className="justify-center items-center pl-2.5">
+        <View className="justify-center items-center pl-2.5" style={{ position: 'relative' }}>
+          {/* Animated pulse rings */}
+          <Animated.View
+            style={[
+              pulseRingStyle,
+              {
+                position: 'absolute',
+                width: isDesktop ? 60 : 52,
+                height: isDesktop ? 60 : 52,
+                borderRadius: isDesktop ? 30 : 26,
+                backgroundColor: 'rgba(234, 88, 12, 0.25)',
+                borderWidth: 1.5,
+                borderColor: 'rgba(234, 88, 12, 0.35)',
+                zIndex: 0,
+              },
+            ]}
+          />
           <TouchableOpacity
             onPress={handleMicPress}
             activeOpacity={0.8}
             className="shadow-md shadow-saffron-500/20"
+            style={{
+              width: isDesktop ? 60 : 52,
+              height: isDesktop ? 60 : 52,
+              borderRadius: isDesktop ? 30 : 26,
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 1,
+            }}
           >
             <LinearGradient
               colors={Colors.gradients.primary as any}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={{
-                width: isDesktop ? 60 : 52,
-                height: isDesktop ? 60 : 52,
+                ...StyleSheet.absoluteFillObject,
                 borderRadius: isDesktop ? 30 : 26,
-                overflow: 'hidden',
+                alignItems: 'center',
+                justifyContent: 'center',
               }}
-              className="items-center justify-center border border-white dark:border-zinc-700"
+              className="border border-white dark:border-zinc-700"
             >
               <Mic size={isDesktop ? 26 : 22} color="#FFFFFF" strokeWidth={1.8} />
             </LinearGradient>

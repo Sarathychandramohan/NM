@@ -6,6 +6,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors } from '@constants/colors';
 import { useAppStore, getTextScale } from '@store/useAppStore';
+import { apiClient } from '@utils/apiClient';
 import { TopAppBar } from '@/components/ui/TopAppBar';
 import { ConfirmModal } from '@/components/overlays/ConfirmModal';
 import { useRouter } from 'expo-router';
@@ -19,17 +20,17 @@ export default function ProfileScreen() {
   const router = useRouter();
   const {
     isDarkMode, toggleDarkMode, selectedLanguage, sessions, logout,
-    setOverlay, userName, userPhone, textSize, setTextSize
+    setOverlay, userName, userEmail, textSize, setTextSize
   } = useAppStore();
   const C = isDarkMode ? Colors.dark : Colors.light;
-  const [confirmType, setConfirmType] = useState<'logout' | 'delete' | null>(null);
+  const [confirmType, setConfirmType] = useState<'delete' | null>(null);
 
   const t = UI_TRANSLATIONS[selectedLanguage.code] || UI_TRANSLATIONS['en-IN'];
   const scale = getTextScale(textSize);
 
   // Real user display values
   const displayName   = userName || 'Guest Citizen';
-  const displayPhone  = userPhone ? `+91 ${userPhone}` : 'Not logged in';
+  const displayPhone  = userEmail ? userEmail : 'Not logged in';
   const avatarInitial = displayName.charAt(0).toUpperCase();
 
   const showAlert = (title: string, msg: string) => {
@@ -40,11 +41,14 @@ export default function ProfileScreen() {
     }
   };
 
-  const handleSignOut = async () => {
-    await logout();
-    router.replace('/(auth)/phone-auth' as any);
-  };
   const handleDeleteAccount = async () => {
+    const { authToken } = useAppStore.getState();
+    if (authToken) {
+      apiClient('/api/auth/me', {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${authToken}` },
+      }).catch(() => {});
+    }
     await logout();
     router.replace('/(auth)/phone-auth' as any);
   };
@@ -139,7 +143,7 @@ export default function ProfileScreen() {
       section: t.dangerZone,
       items: [
         { label: t.deleteAccount, Icon: Trash2, danger: true, onPress: () => { setConfirmType('delete'); setOverlay('confirm'); } },
-        { label: t.signOut,       Icon: LogOut,  danger: true, onPress: () => { setConfirmType('logout'); setOverlay('confirm'); } },
+        { label: t.signOut,       Icon: LogOut,  danger: true, onPress: () => { setOverlay('confirm_logout'); } },
       ],
     },
   ];
@@ -225,16 +229,12 @@ export default function ProfileScreen() {
       </ScrollView>
 
       <ConfirmModal
-        title={confirmType === 'delete' ? t.deleteTitle : t.signOutTitle}
-        description={
-          confirmType === 'delete'
-            ? t.deleteDesc
-            : t.signOutDesc
-        }
-        confirmText={confirmType === 'delete' ? t.deleteAccount : t.signOut}
+        title={t.deleteTitle}
+        description={t.deleteDesc}
+        confirmText={t.deleteAccount}
         cancelText={t.cancel}
         isDestructive={true}
-        onConfirm={confirmType === 'delete' ? handleDeleteAccount : handleSignOut}
+        onConfirm={handleDeleteAccount}
         onCancel={() => setConfirmType(null)}
       />
     </SafeAreaView>

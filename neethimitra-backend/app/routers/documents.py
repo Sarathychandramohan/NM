@@ -1,6 +1,5 @@
 import os
 import uuid
-from datetime import datetime
 from typing import List
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile
@@ -12,7 +11,7 @@ from app.database import SessionLocal, get_db
 from app.models import Document, Message, Session as DBSession, User
 from app.schemas import DocumentResponse
 from app.services.sarvam_vision import extract_text_from_document
-from app.services.session_support import build_session_event, mark_session_active, summarize_text
+from app.services.session_support import build_session_event, mark_session_active, summarize_text, utcnow
 
 router = APIRouter(prefix="/api/sessions", tags=["documents"])
 
@@ -27,6 +26,12 @@ ALLOWED_DOCUMENT_TYPES = {
 def _validate_upload(file: UploadFile, file_size_bytes: int) -> None:
     if not file.filename:
         raise HTTPException(status_code=400, detail="Uploaded file must have a filename")
+
+    clean_original = os.path.basename(file.filename)
+    ext = os.path.splitext(clean_original)[1].lower().lstrip(".")
+    if ext not in {"pdf", "png", "jpg", "jpeg"}:
+        raise HTTPException(status_code=400, detail="Only PDF, PNG, and JPEG file extensions are allowed.")
+
     if file.content_type not in ALLOWED_DOCUMENT_TYPES:
         raise HTTPException(status_code=400, detail="Only PDF, PNG, and JPEG uploads are supported")
 
@@ -35,7 +40,19 @@ def _validate_upload(file: UploadFile, file_size_bytes: int) -> None:
         raise HTTPException(status_code=413, detail=f"File exceeds {settings.MAX_UPLOAD_SIZE_MB} MB limit")
 
 
-async def _process_document_async(document_id: int, original_filename: str, file_content: bytes, mime_type: str, session_language: str) -> None:
+async def _process_document_async(
+    document_id: int,
+    original_filename: str,
+    file_content: bytes,
+    mime_type: str,
+    session_language: str,
+) -> None:
+    """
+    Native async background task for document processing.
+    Uses its own DB session (the request-scoped one is already closed).
+    Raises only standard Python exceptions — never FastAPI HTTPException —
+    since this runs outside the HTTP request-response lifecycle.
+    """
     db = SessionLocal()
     try:
         db_doc = db.query(Document).filter(Document.id == document_id).first()
@@ -47,6 +64,7 @@ async def _process_document_async(document_id: int, original_filename: str, file
         db.commit()
 
         try:
+            # Native await — no asyncio.run() needed; this function is async def
             extracted_markdown = await extract_text_from_document(
                 file_bytes=file_content,
                 filename=original_filename,
@@ -60,11 +78,14 @@ async def _process_document_async(document_id: int, original_filename: str, file
             db_doc.analysis_status = "failed"
             db_doc.analysis_error = str(exc)
 
-        db_doc.processed_at = datetime.utcnow()
+        db_doc.processed_at = utcnow()
 
         session = db.query(DBSession).filter(DBSession.id == db_doc.session_id).first()
         if session:
-            mark_session_active(session, "active" if db_doc.analysis_status == "completed" else "document_attention")
+            mark_session_active(
+                session,
+                "active" if db_doc.analysis_status == "completed" else "document_attention",
+            )
 
         db.add(
             Message(
@@ -100,6 +121,23 @@ async def _process_document_async(document_id: int, original_filename: str, file
         db.close()
 
 
+# ── Bug fix: /user/all-docs MUST be registered before /{session_id}/documents ──
+# FastAPI matches routes in registration order. If this came after the parameterised
+# route, the literal string "user" would be treated as a session_id and fail.
+@router.get("/user/all-docs", response_model=List[DocumentResponse])
+def get_user_documents(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Fetches all documents across all sessions for the logged-in user."""
+    return (
+        db.query(Document)
+        .filter(Document.user_id == current_user.id)
+        .order_by(Document.created_at.desc())
+        .all()
+    )
+
+
 @router.post("/{session_id}/documents", response_model=DocumentResponse)
 async def upload_document(
     session_id: str,
@@ -108,7 +146,11 @@ async def upload_document(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_real_user),   # guests blocked here
 ):
-    db_session = db.query(DBSession).filter(DBSession.id == session_id, DBSession.user_id == current_user.id).first()
+    db_session = (
+        db.query(DBSession)
+        .filter(DBSession.id == session_id, DBSession.user_id == current_user.id)
+        .first()
+    )
     if not db_session:
         raise HTTPException(status_code=404, detail="Session not found or not owned by user")
 
@@ -117,9 +159,13 @@ async def upload_document(
     _validate_upload(file, file_size_bytes)
 
     file_id = uuid.uuid4().hex[:8]
-    ext = os.path.splitext(file.filename)[1] or ".bin"
+    clean_original = os.path.basename(file.filename)
+    ext = os.path.splitext(clean_original)[1].lower() or ".bin"
     safe_filename = f"doc_{file_id}{ext}"
-    dest_path = os.path.join(settings.UPLOAD_DIR, safe_filename)
+
+    dest_path = os.path.abspath(os.path.join(settings.UPLOAD_DIR, safe_filename))
+    if not dest_path.startswith(os.path.abspath(settings.UPLOAD_DIR)):
+        raise HTTPException(status_code=400, detail="Invalid path construction")
 
     with open(dest_path, "wb") as saved_file:
         saved_file.write(file_content)
@@ -127,7 +173,7 @@ async def upload_document(
     db_doc = Document(
         session_id=session_id,
         user_id=current_user.id,
-        filename=file.filename,
+        filename=clean_original,
         file_path=f"/static/uploads/{safe_filename}",
         mime_type=file.content_type,
         file_size_kb=max(1, file_size_bytes // 1024),
@@ -153,6 +199,7 @@ async def upload_document(
     db.commit()
     db.refresh(db_doc)
 
+    # FastAPI runs async background tasks natively in the event loop — no asyncio.run()
     background_tasks.add_task(
         _process_document_async,
         db_doc.id,
@@ -171,7 +218,11 @@ def list_documents(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    db_session = db.query(DBSession).filter(DBSession.id == session_id, DBSession.user_id == current_user.id).first()
+    db_session = (
+        db.query(DBSession)
+        .filter(DBSession.id == session_id, DBSession.user_id == current_user.id)
+        .first()
+    )
     if not db_session:
         raise HTTPException(status_code=404, detail="Session not found or not owned by user")
 

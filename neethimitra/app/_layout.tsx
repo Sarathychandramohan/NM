@@ -30,6 +30,7 @@ import { ErrorSheet } from '@/components/overlays/ErrorSheet';
 import { SuccessSheet } from '@/components/overlays/SuccessSheet';
 import { Sidebar } from '@/components/ui/Sidebar';
 import { LoginPromptModal } from '@/components/overlays/LoginPromptModal';
+import { SignOutConfirmModal } from '@/components/overlays/SignOutConfirmModal';
 
 // Disable Reanimated strict mode to suppress shared value read warnings during render
 configureReanimatedLogger({
@@ -93,6 +94,7 @@ export default function RootLayout() {
           <SuccessSheet />
           <Sidebar />
           <LoginPromptModal />
+          <SignOutConfirmModal />
         </SafeAreaProvider>
       </ThemeProvider>
     </GestureHandlerRootView>

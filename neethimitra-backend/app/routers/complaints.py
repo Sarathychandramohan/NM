@@ -23,13 +23,14 @@ async def generate_complaint(
 
     user_messages = [message.text_content for message in db_session.messages if message.role == "user"]
     doc_texts = [document.extracted_text for document in db_session.documents if document.extracted_text]
+    next_version = db.query(Complaint).filter(Complaint.session_id == session_id).count() + 1
     pdf_url, summary_text = await create_complaint_pdf(
         session_id=session_id,
         category=db_session.category,
         user_messages=user_messages,
         document_texts=doc_texts,
+        version=next_version,
     )
-    next_version = db.query(Complaint).filter(Complaint.session_id == session_id).count() + 1
 
     db_complaint = Complaint(
         session_id=session_id,

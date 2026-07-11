@@ -11,6 +11,7 @@ import Animated, {
   withTiming,
   withDelay
 } from 'react-native-reanimated';
+import { safeNotification } from '../../utils/haptics';
 import * as Haptics from 'expo-haptics';
 
 
@@ -51,7 +52,7 @@ export function SuccessSheet({
       circleScale.value = withSpring(1.0, { damping: 15, stiffness: 200 });
       checkmarkOpacity.value = withDelay(400, withTiming(1, { duration: 200 }));
 
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      safeNotification(Haptics.NotificationFeedbackType.Success);
 
       // Auto-dismiss after 4 seconds
       dismissTimer = setTimeout(() => {

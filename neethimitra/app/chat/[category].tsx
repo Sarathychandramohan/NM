@@ -50,35 +50,35 @@ const HELPLINE_MAP: Record<string, string> = {
 };
 
 const CATEGORY_SUGGESTIONS: Record<string, string[]> = {
+  consumer: [
+    "Amazon/Flipkart is refusing my product refund.",
+    "I bought a phone with 1-year warranty but seller won't repair it.",
+    "I received a fake product. How to claim my money back?",
+  ],
+  cybercrime: [
+    "I shared an OTP and lost money from my bank account.",
+    "Someone is blackmailing me online. What should I do?",
+    "I got a fake electricity bill SMS containing a malicious link.",
+  ],
   land: [
     "My neighbor encroached on my agricultural boundary.",
     "What documents are needed to verify land ownership (Patta)?",
     "How to register a land partition deed among family members?",
   ],
-  police: [
-    "How do I file an FIR at the police station?",
-    "The police are refusing to register my complaint. What can I do?",
-    "What are my rights if I am arrested?",
+  labor: [
+    "My employer terminated me without paying my last month salary.",
+    "I have not received my minimum wage compensation.",
+    "Is it legal to terminate a contract without notice period?",
   ],
-  cyber: [
-    "I shared an OTP and lost money from my bank account.",
-    "Someone is blackmailing me online. What should I do?",
-    "I got a fake electricity bill SMS containing a malicious link.",
-  ],
-  health: [
-    "A hospital is refusing to treat me without advance payment.",
-    "How do I file a complaint against a doctor for negligence?",
-    "My insurance claim was rejected unfairly. What are my options?",
-  ],
-  family: [
+  women_dv: [
     "How do I seek a protection order against domestic violence?",
     "Where is the nearest One Stop Centre for women assistance?",
     "What is the procedure to file a harassment complaint?",
   ],
-  rti: [
-    "How do I file a general Right to Information (RTI) query?",
-    "Where do I file a grievance against a government department?",
-    "How do I obtain legal aid if I cannot afford a lawyer?",
+  senior: [
+    "My children took my property and are now neglecting me.",
+    "How to apply for maintenance under the Senior Citizens Act?",
+    "What government helplines are active for elder abuse?",
   ],
   general: [
     "How do I file a general Right to Information (RTI) query?",
@@ -310,8 +310,7 @@ export default function ChatScreen() {
     if (!alreadyLoaded) {
       startSession(category);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [category.id, activeSession?.id]);
+  }, [category.id]);
 
   // Submit initial query when the session is ready
   useEffect(() => {
@@ -471,7 +470,7 @@ export default function ChatScreen() {
         loadingAudioId={loadingAudioId}
       />
     );
-  }, [isDarkMode, C, scale, t, loadingAudioId, playResponseAudio]);
+  }, [isDarkMode, C, scale, t, loadingAudioId]);
 
   const pdfBannerAnim = useAnimatedStyle(() => ({
     transform: [{ translateY: pdfBannerY.value }],
@@ -554,7 +553,10 @@ export default function ChatScreen() {
                 {(CATEGORY_SUGGESTIONS[category.id] || CATEGORY_SUGGESTIONS['general']).map((suggestion, idx) => (
                   <TouchableOpacity
                     key={idx}
-                    onPress={() => sendMessage(suggestion)}
+                    onPress={() => {
+                      setInputText(suggestion);
+                      sendMessage(suggestion);
+                    }}
                     style={[
                       styles.suggestionCard,
                       {
@@ -714,7 +716,7 @@ export default function ChatScreen() {
                 ]}
               />
               <TouchableOpacity
-                onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setOverlay('recording'); }}
+                onPress={() => { safeImpact(Haptics.ImpactFeedbackStyle.Medium); setOverlay('recording'); }}
                 activeOpacity={0.85}
                 style={{
                   width: 44,

@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text } from 'react-native';
 import Svg, { Path, Line, Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
+import { useAppStore } from '@store/useAppStore';
 
 interface LogoProps {
   size?: number;
@@ -10,7 +11,23 @@ interface LogoProps {
   whiteVersion?: boolean;
 }
 
+const TAGLINES: Record<string, string> = {
+  'en-IN': 'Know Your Rights. In Your Voice.',
+  'hi-IN': 'अपने अधिकार जानें। अपनी आवाज़ में।',
+  'ta-IN': 'உங்கள் உரிமைகளை அறியுங்கள். உங்கள் குரலில்.',
+  'te-IN': 'మీ హక్కులను తెలుసుకోండి. మీ వాయిస్‌లో.',
+  'bn-IN': 'আপনার অধিকার জানুন। আপনার কণ্ঠে।',
+  'mr-IN': 'तुमचे हक्क जाणून घ्या। तुमच्या आवाजात.',
+  'kn-IN': 'ನಿಮ್ಮ ಹಕ್ಕುಗಳನ್ನು ತಿಳियಿರಿ. ನಿಮ್ಮ ಧ್ವನಿಯಲ್ಲಿ.',
+  'ml-IN': 'നിങ്ങളുടെ അവകാശങ്ങൾ അറിയുക. നിങ്ങളുടെ ശബ്ദത്തിൽ.',
+  'gu-IN': 'તમારા અધિકારો જાણો. તમારા અવાજમાં.',
+  'pa-IN': 'ਆਪਣੇ ਅਧਿਕਾਰ ਜਾਣੋ। ਆਪਣੀ ਆਵਾਜ਼ ਵਿੱਚ।',
+  'od-IN': 'ଆପଣଙ୍କର ଅଧିକାର ଜାଣନ୍ତୁ | ଆପଣଙ୍କ ସ୍ୱରରେ |',
+};
+
 export function Logo({ size = 40, showText = true, stacked = false, lightBg = true, whiteVersion = false }: LogoProps) {
+  const { selectedLanguage } = useAppStore();
+  
   // SVG Logo Mark Component
   const LogoMark = () => {
     const strokeWidth = 4;
@@ -92,6 +109,10 @@ export function Logo({ size = 40, showText = true, stacked = false, lightBg = tr
     return <LogoMark />;
   }
 
+  const logoText = selectedLanguage.logoText || 'NeethiMitra';
+  const isEnglish = selectedLanguage.code === 'en-IN';
+  const tagline = TAGLINES[selectedLanguage.code] || TAGLINES['en-IN'];
+
   if (stacked) {
     return (
       <View style={{ alignItems: 'center', justifyContent: 'center', gap: spacing / 2 }}>
@@ -99,17 +120,19 @@ export function Logo({ size = 40, showText = true, stacked = false, lightBg = tr
         <View style={{ alignItems: 'center' }}>
           <Text style={{ fontSize: titleSize, fontFamily: 'PlusJakartaSans_700Bold', letterSpacing: -0.5 }}>
             {whiteVersion ? (
-              <Text className="text-white">NeethiMitra</Text>
-            ) : (
+              <Text style={{ color: '#FFFFFF' }}>{logoText}</Text>
+            ) : isEnglish ? (
               <>
                 <Text style={{ color: '#E8580C' }}>Neethi</Text>
                 <Text style={{ color: '#1A6B3C' }}>Mitra</Text>
               </>
+            ) : (
+              <Text style={{ color: '#E8580C' }}>{logoText}</Text>
             )}
             <Text style={{ fontSize: aiSize, position: 'relative', top: -aiSize * 0.2, marginLeft: 2, color: whiteVersion ? 'rgba(255,255,255,0.8)' : '#6B7280' }}>AI</Text>
           </Text>
-          <Text style={{ fontSize: subtitleSize, fontFamily: 'PlusJakartaSans_400Regular_Italic', marginTop: 2, color: whiteVersion ? 'rgba(255,255,255,0.8)' : '#9CA3AF' }}>
-            Know Your Rights. In Your Voice.
+          <Text style={{ fontSize: subtitleSize, fontFamily: 'PlusJakartaSans_400Regular_Italic', marginTop: 2, color: whiteVersion ? 'rgba(255,255,255,0.8)' : '#9CA3AF', textAlign: 'center' }}>
+            {tagline}
           </Text>
         </View>
       </View>
@@ -122,17 +145,19 @@ export function Logo({ size = 40, showText = true, stacked = false, lightBg = tr
       <View style={{ justifyContent: 'center' }}>
         <Text style={{ fontSize: titleSize, fontFamily: 'PlusJakartaSans_700Bold', letterSpacing: -0.5, lineHeight: titleSize * 1.1 }}>
           {whiteVersion ? (
-            <Text className="text-white">NeethiMitra</Text>
-          ) : (
+            <Text style={{ color: '#FFFFFF' }}>{logoText}</Text>
+          ) : isEnglish ? (
             <>
               <Text style={{ color: '#E8580C' }}>Neethi</Text>
               <Text style={{ color: '#1A6B3C' }}>Mitra</Text>
             </>
+          ) : (
+            <Text style={{ color: '#E8580C' }}>{logoText}</Text>
           )}
           <Text style={{ fontSize: aiSize, position: 'relative', top: -aiSize * 0.2, marginLeft: 2, color: whiteVersion ? 'rgba(255,255,255,0.8)' : '#6B7280' }}>AI</Text>
         </Text>
         <Text style={{ fontSize: subtitleSize, fontFamily: 'PlusJakartaSans_400Regular_Italic', color: whiteVersion ? 'rgba(255,255,255,0.7)' : '#9CA3AF', lineHeight: subtitleSize * 1.2 }}>
-          Know Your Rights. In Your Voice.
+          {tagline}
         </Text>
       </View>
     </View>

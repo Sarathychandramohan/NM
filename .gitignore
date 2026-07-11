@@ -9,3 +9,7 @@ dist/
 build/
 neethimitra-backend/alembic/__pycache__/
 *.db
+neethimitra-backend/server.log
+neethimitra-backend/uvicorn.pid
+neethimitra-backend/static/
+neethimitra-backend/test_api.py

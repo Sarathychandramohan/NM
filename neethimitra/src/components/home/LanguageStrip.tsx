@@ -4,6 +4,7 @@ import { useAppStore } from '@store/useAppStore';
 import { LANGUAGES, Language } from '@constants/languages';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Colors } from '@constants/colors';
+import { safeImpact } from '@/utils/haptics';
 import * as Haptics from 'expo-haptics';
 import { UI_TRANSLATIONS } from '@constants/translations';
 
@@ -14,12 +15,12 @@ export function LanguageStrip() {
   const { selectedLanguage, setLanguage, setOverlay, isDarkMode } = useAppStore();
 
   const handleLanguageSelect = (lang: Language) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    safeImpact(Haptics.ImpactFeedbackStyle.Light);
     setLanguage(lang);
   };
 
   const handleMorePress = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    safeImpact(Haptics.ImpactFeedbackStyle.Medium);
     setOverlay('language');
   };
 

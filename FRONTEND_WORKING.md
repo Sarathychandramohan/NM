@@ -26,7 +26,7 @@ neethimitra/
 │   ├── (auth)/                 # Onboarding, Splash & Authentication screens
 │   │   ├── _layout.tsx         # Auth layout wrapper
 │   │   ├── onboarding.tsx      # Carousel introduction
-│   │   ├── phone-auth.tsx      # Localized mobile number entry screen
+│   │   ├── phone-auth.tsx      # Localized mobile number entry screen with top-right language switcher
 │   │   ├── otp-verify.tsx      # 6-digit OTP verification screen
 │   │   └── splash.tsx          # Initial spin loader & auth status checker
 │   ├── (tabs)/                 # Main Application Tab Views (TabNavigator)
@@ -36,13 +36,13 @@ neethimitra/
 │   │   ├── my-files.tsx        # Uploaded documents library & scanner
 │   │   └── profile.tsx         # Settings (Theme, Language, Text Size)
 │   ├── chat/
-│   │   └── [category].tsx      # Multi-mode conversational interface
+│   │   └── [category].tsx      # Multi-mode conversational interface with pulsing mic button
 │   ├── web-landing.tsx         # Optional public-facing landing page
 │   └── _layout.tsx             # Root layout with providers & global overlays
 │
 ├── src/
 │   ├── components/
-│   │   ├── home/               # CategoryCard, WelcomeBanner, InputZone, etc.
+│   │   ├── home/               # CategoryCard, WelcomeBanner, InputZone with pulsing mic button
 │   │   ├── overlays/           # RecordingOverlay, LanguagePicker, ConfirmModal
 │   │   ├── ui/                 # Sidebar drawer, CustomTabBar, TopAppBar, Logo
 │   │   └── web/                # WebAppShell desktop wrapper
@@ -50,7 +50,8 @@ neethimitra/
 │   ├── constants/
 │   │   ├── colors.ts           # Standardized color system (Light/Dark tokens)
 │   │   ├── languages.ts        # Metadata list of the 11 supported locales
-│   │   └── translations.ts     # Master UI translations file (Static lookup)
+│   │   ├── translations.ts     # Master UI translations file (Static lookup)
+│   │   └── landingTranslations.ts # Localized strings dataset for web-landing sections
 │   │
 │   ├── store/
 │   │   └── useAppStore.ts      # Zustand global state manager
@@ -83,7 +84,7 @@ We support exactly these 11 languages throughout the application:
 11. `od-IN` (Odia - renamed from `or-IN`)
 
 ### Zero API Calls for Static UI
-All static UI text, navigation tabs, buttons, dialog messages, error messages, and descriptions are loaded locally from `translations.ts` via the user's selected language:
+All static UI text, navigation tabs, buttons, dialog messages, error messages, and descriptions are loaded locally from `translations.ts` and `landingTranslations.ts` via the user's selected language:
 ```typescript
 const { selectedLanguage } = useAppStore();
 const t = UI_TRANSLATIONS[selectedLanguage.code] || UI_TRANSLATIONS['en-IN'];
@@ -116,7 +117,31 @@ NeethiMitra uses platform detection (`Platform.OS === 'web'`) to render distinct
 
 ---
 
-## 5. Zustand State Store (`useAppStore.ts`)
+## 5. Recent Core Layout & UI Adjustments
+
+To improve layout premium aesthetics and authentication transitions, several shifts have been completed:
+
+### 1. Unified Splash & Auth Flow
+- Splash screen acts as the initial onboarding landing gate.
+- Integrated language selection overlays directly at the top right of the phone entry authentication screen (`phone-auth.tsx`).
+- Back button navigation added at the top-left of the authentication and main pages to enable smooth routing.
+- The web landing page (`WebLandingPage.tsx`) now directly scrolls to Features, How it Works, and Categories on-page, completely removing route sub-pages.
+
+### 2. User Details Top-Right Header Placement
+- Username and email details have been removed from the top of the Sidebar drawer on both mobile and web.
+- These details are now placed at the top-right header, immediately to the left of the user profile avatar in both `TopAppBar.tsx` (mobile) and `WebAppShell.tsx` (web top bar).
+
+### 3. Sidebar Find/Search Button & Back Controls
+- Sidebar headers now contain a **Back** icon button and a **Search (Find)** button.
+- Tapping the search icon opens a text input that filters categories and historical chat sessions dynamically by name.
+
+### 4. Text Input Mic Pulsing & FAB Removal
+- Hided the floating bottom-right mic button on web desktop screens since desktop navigation is anchored around the sidebar.
+- Added animated pulsing concentric glowing rings (using Reanimated `withRepeat` looping timers) around the mic icon button located directly to the right of the text prompt area in both `InputZone.tsx` and `app/chat/[category].tsx`.
+
+---
+
+## 6. Zustand State Store (`useAppStore.ts`)
 
 The store acts as the single source of truth for navigation state, user authentication, and active session conversations.
 
@@ -136,7 +161,7 @@ The store acts as the single source of truth for navigation state, user authenti
 
 ---
 
-## 6. Crucial Overlay Components
+## 7. Crucial Overlay Components
 
 ### 🎙️ Voice Recording (`RecordingOverlay.tsx`)
 * **Web Version**: Center-aligned modal displaying a microphone button, animated waveform, real-time transcript text, and explicit **Cancel** and **Send** buttons.
@@ -149,8 +174,9 @@ The store acts as the single source of truth for navigation state, user authenti
 
 ---
 
-## 7. Performance & Stability Rules
+## 8. Performance & Stability Rules
 
 1. **Wait for StartSession**: Expo Router navigation (`router.push`) must always happen *after* awaiting `startSession(...)` to ensure components mount with an active session ID already in state.
 2. **Standard Styles over ClassNames**: Never use NativeWind class names (`className`) on third-party or native components (like `LinearGradient` or `Animated.View`) as this causes compilation crashes or console errors during rendering. Use inline style objects.
 3. **Locale-Aware Formatting**: Always pass `selectedLanguage.code` to date/time formatters (`toLocaleDateString`) to ensure time stamps match the chosen locale.
+4. **Safe Haptic Wrappers**: Never import `expo-haptics` and call `Haptics.impactAsync()` or `Haptics.notificationAsync()` directly in UI event triggers. Always import and use `safeImpact()` or `safeNotification()` from `@/utils/haptics` to prevent runtime crashes on the Web platform.

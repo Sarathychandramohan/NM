@@ -89,7 +89,13 @@ export default function PhoneAuthScreen() {
     setLoading(true);
     setError(null);
     try {
-      setError('Google Sign-In is not available yet. Please use email/password or continue as guest.');
+      // Constructs a dev mock token accepted by the backend when GOOGLE_CLIENT_ID is not set.
+      // In production: replace this with a real Google ID token from expo-auth-session.
+      const mockIdToken = `mock_google_${email || 'citizen@neethimitra.ai'}_NeethiMitra Citizen`;
+      await loginWithGoogle(mockIdToken, selectedLanguage.code);
+      router.replace('/(tabs)' as any);
+    } catch (err: any) {
+      setError(err?.message ?? 'Google Sign-In failed.');
     } finally {
       setLoading(false);
     }
@@ -328,6 +334,9 @@ export default function PhoneAuthScreen() {
         </TouchableOpacity>
       )}
 
+      <Text style={[styles.disclaimerText, { color: C.textHint, marginTop: 16 }]}>
+        By proceeding, you agree to NeethiMitra's Terms of Service and Privacy Policy.
+      </Text>
     </View>
   );
 
@@ -407,6 +416,10 @@ export default function PhoneAuthScreen() {
             By proceeding, you agree to NeethiMitra's Terms of Service and Privacy Policy.
           </Text>
         </View>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
+  );
+}
 
 const styles = StyleSheet.create({
   // Mobile

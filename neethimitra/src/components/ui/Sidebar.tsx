@@ -1,5 +1,5 @@
-import React, { useEffect } from 'react';
-import { View, Text, TouchableOpacity, Pressable, ScrollView, Dimensions, Platform, StyleSheet } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, TouchableOpacity, Pressable, ScrollView, Dimensions, Platform, StyleSheet, TextInput } from 'react-native';
 import { useAppStore, CATEGORIES, Category, getTextScale } from '@store/useAppStore';
 import { LinearGradient } from 'expo-linear-gradient';
 import { 
@@ -13,7 +13,12 @@ import {
   Heart,
   Scale,
   LogOut,
-  MessageSquare
+  MessageSquare,
+  ChevronRight,
+  ChevronDown,
+  Plus,
+  ArrowLeft,
+  Search,
 } from 'lucide-react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
 import { Logo } from './Logo';
@@ -44,9 +49,20 @@ export function Sidebar() {
   const router = useRouter();
   const pathname = usePathname();
   const { 
-    isSidebarOpen, setSidebarOpen, isDarkMode, startSession, 
-    logout, setOverlay, userName, userPhone, profileImage, isAnonymousGuest, selectedLanguage, textSize 
+    isSidebarOpen, setSidebarOpen, isDarkMode, startSession, sessions, loadSession,
+    logout, setOverlay, userName, userEmail, profileImage, isAnonymousGuest, selectedLanguage, textSize 
   } = useAppStore();
+
+  const [expandedCats, setExpandedCats] = useState<Record<string, boolean>>({});
+  const [showSearchInput, setShowSearchInput] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const toggleExpand = (catId: string) => {
+    setExpandedCats((prev) => ({ ...prev, [catId]: !prev[catId] }));
+  };
+
+  const getRecentForCat = (catId: string) =>
+    sessions.filter((s) => s.categoryId === catId).slice(0, 5);
 
   const scale = getTextScale(textSize);
 
@@ -54,7 +70,7 @@ export function Sidebar() {
 
   // Derive display values — fall back gracefully for guests
   const displayName   = userName || 'Guest Citizen';
-  const displayPhone  = isAnonymousGuest ? t.guestLimitationsTitle : (userPhone ? `+91 ${userPhone.slice(-10)}` : 'Registered User');
+  const displayPhone  = isAnonymousGuest ? t.guestLimitationsTitle : (userEmail ? userEmail : 'Registered User');
   const avatarInitial = displayName.charAt(0).toUpperCase();
   // Google users store their account color in profileImage field
   const avatarBg = profileImage && profileImage.startsWith('#') ? profileImage : 'rgba(255,255,255,0.2)';
@@ -82,14 +98,33 @@ export function Sidebar() {
   const handleCategoryPress = async (category: Category) => {
     safeImpact(Haptics.ImpactFeedbackStyle.Light);
     setSidebarOpen(false);
+    // Resume most recent session for this category if it has messages, else start new
+    const recents = getRecentForCat(category.id);
+    if (recents.length > 0 && recents[0].messages.length > 0) {
+      await loadSession(recents[0].id);
+    } else {
+      await startSession(category);
+    }
+    router.push(`/chat/${category.id}` as any);
+  };
+
+  const handleNewChat = async (category: Category) => {
+    safeImpact(Haptics.ImpactFeedbackStyle.Light);
+    setSidebarOpen(false);
     await startSession(category);
     router.push(`/chat/${category.id}` as any);
   };
 
-  const handleSignOut = async () => {
+  const handleResumeSession = async (sessionId: string, catId: string) => {
     setSidebarOpen(false);
-    await logout();
-    router.replace('/(auth)/phone-auth' as any);
+    await loadSession(sessionId);
+    router.push(`/chat/${catId}` as any);
+  };
+
+  const handleSignOut = () => {
+    safeImpact(Haptics.ImpactFeedbackStyle.Medium);
+    setSidebarOpen(false);
+    setOverlay('confirm_logout');
   };
 
   const isWeb = Platform.OS === 'web';
@@ -128,38 +163,41 @@ export function Sidebar() {
           {/* Divider */}
           <View style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.2)', marginVertical: 16 }} />
 
-          {/* User Info Row */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 4 }}>
-            <View style={{
-              width: 44, height: 44, borderRadius: 22,
-              backgroundColor: avatarBg,
-              borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.35)',
-              alignItems: 'center', justifyContent: 'center',
-            }}>
-              <Text style={{ fontSize: 18 * scale, fontFamily: 'PlusJakartaSans_700Bold', color: '#FFFFFF' }}>
-                {avatarInitial}
-              </Text>
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 16 * scale, fontFamily: 'PlusJakartaSans_700Bold', color: '#FFFFFF', lineHeight: 22 }} numberOfLines={1}>
-                {displayName}
-              </Text>
-              {isAnonymousGuest ? (
-                <TouchableOpacity
-                  onPress={() => { setSidebarOpen(false); setOverlay('login_prompt'); }}
-                  style={{ marginTop: 2 }}
-                >
-                  <Text style={{ fontSize: 11 * scale, fontFamily: 'PlusJakartaSans_600SemiBold', color: '#FED7AA' }}>
-                    {t.registerToUnlock} →
-                  </Text>
-                </TouchableOpacity>
-              ) : (
-                <Text style={{ fontSize: 12 * scale, fontFamily: 'PlusJakartaSans_400Regular', color: 'rgba(255,255,255,0.75)', marginTop: 2 }} numberOfLines={1}>
-                  {displayPhone}
-                </Text>
-              )}
-            </View>
+          {/* Back Navigation and Find Button */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
+            <TouchableOpacity
+              onPress={() => setSidebarOpen(false)}
+              style={{ padding: 6 }}
+              activeOpacity={0.7}
+            >
+              <ArrowLeft size={22} color="#FFFFFF" strokeWidth={2.2} />
+            </TouchableOpacity>
+
+            <Text style={{ fontSize: 16 * scale, fontFamily: 'PlusJakartaSans_700Bold', color: '#FFFFFF' }}>
+              {t.navigation}
+            </Text>
+
+            <TouchableOpacity
+              onPress={() => setShowSearchInput(!showSearchInput)}
+              style={{ padding: 6 }}
+              activeOpacity={0.7}
+            >
+              <Search size={22} color="#FFFFFF" strokeWidth={2.2} />
+            </TouchableOpacity>
           </View>
+
+          {showSearchInput && (
+            <View style={{ marginTop: 12, backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 4 }}>
+              <TextInput
+                placeholder={t.searchChats || "Search chats..."}
+                placeholderTextColor="rgba(255,255,255,0.6)"
+                style={{ height: 36, color: '#FFFFFF', fontFamily: 'PlusJakartaSans_500Medium' } as any}
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                autoFocus
+              />
+            </View>
+          )}
         </LinearGradient>
 
         {/* Drawer Scrollable Menu */}
@@ -252,24 +290,93 @@ export function Sidebar() {
             {t.legalCategories}
           </Text>
 
-          {CATEGORIES.map((cat) => {
+          {CATEGORIES.filter(cat => {
+            if (!searchQuery) return true;
+            const catLabel = (t[cat.id] ?? cat.label).toLowerCase();
+            const matchesCat = catLabel.includes(searchQuery.toLowerCase());
+            const recents = getRecentForCat(cat.id);
+            const matchesSessions = recents.some(s =>
+              s.messages.some(m => m.text.toLowerCase().includes(searchQuery.toLowerCase()))
+            );
+            return matchesCat || matchesSessions;
+          }).map((cat) => {
             const cc = CATEGORY_ICONS[cat.id] || { color: '#E8580C', IconComponent: Scale };
             const CatIcon = cc.IconComponent;
             const catLabel = t[cat.id] ?? cat.label;
+            const recentSessions = getRecentForCat(cat.id);
+            const hasHistory = recentSessions.length > 0;
+            const isExpanded = expandedCats[cat.id] ?? false;
+
             return (
-              <TouchableOpacity 
-                key={cat.id}
-                onPress={() => handleCategoryPress(cat)}
-                style={sidebarStyles.navItem}
-                activeOpacity={0.7}
-              >
-                <View style={[sidebarStyles.catIconBadge, { backgroundColor: cc.color + '18' }]}>
-                  <CatIcon size={14} color={cc.color} strokeWidth={2} />
+              <View key={cat.id}>
+                {/* Category row */}
+                <View style={[sidebarStyles.navItem, { paddingRight: 4 }]}>
+                  {/* Icon + label — tap to navigate */}
+                  <TouchableOpacity
+                    onPress={() => handleCategoryPress(cat)}
+                    style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: 10 }}
+                    activeOpacity={0.7}
+                  >
+                    <View style={[sidebarStyles.catIconBadge, { backgroundColor: cc.color + '18' }]}>
+                      <CatIcon size={14} color={cc.color} strokeWidth={2} />
+                    </View>
+                    <Text style={[sidebarStyles.navLabel, { color: isDarkMode ? '#D4D4D8' : '#3F3F46', fontSize: 13 * scale }]} adjustsFontSizeToFit={true} minimumFontScale={0.8} numberOfLines={1}>
+                      {catLabel}
+                    </Text>
+                  </TouchableOpacity>
+
+                  {/* + new chat button */}
+                  <TouchableOpacity
+                    onPress={() => handleNewChat(cat)}
+                    style={[
+                      sidebarStyles.catActionBtn,
+                      { backgroundColor: isDarkMode ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)' },
+                    ]}
+                    activeOpacity={0.7}
+                  >
+                    <Plus size={12} color={isDarkMode ? '#71717A' : '#9CA3AF'} strokeWidth={2.5} />
+                  </TouchableOpacity>
+
+                  {/* Chevron — toggle history */}
+                  <TouchableOpacity
+                    onPress={() => hasHistory && toggleExpand(cat.id)}
+                    style={sidebarStyles.catActionBtn}
+                    activeOpacity={hasHistory ? 0.7 : 1}
+                  >
+                    {isExpanded
+                      ? <ChevronDown size={13} color={hasHistory ? (isDarkMode ? '#71717A' : '#9CA3AF') : 'transparent'} strokeWidth={2} />
+                      : <ChevronRight size={13} color={hasHistory ? (isDarkMode ? '#71717A' : '#9CA3AF') : 'transparent'} strokeWidth={1.5} />
+                    }
+                  </TouchableOpacity>
                 </View>
-                <Text style={[sidebarStyles.navLabel, { color: isDarkMode ? '#D4D4D8' : '#3F3F46', fontSize: 13 * scale }]} adjustsFontSizeToFit={true} minimumFontScale={0.8} numberOfLines={1}>
-                  {catLabel}
-                </Text>
-              </TouchableOpacity>
+
+                {/* Expanded recent sessions */}
+                {isExpanded && hasHistory && (
+                  <View style={{ paddingLeft: 44, paddingRight: 12, marginBottom: 4 }}>
+                    {recentSessions.map((sess) => {
+                      const lastMsg = sess.messages[sess.messages.length - 1];
+                      const preview = lastMsg
+                        ? lastMsg.text.slice(0, 36) + (lastMsg.text.length > 36 ? '…' : '')
+                        : 'Empty session';
+                      return (
+                        <TouchableOpacity
+                          key={sess.id}
+                          onPress={() => handleResumeSession(sess.id, cat.id)}
+                          activeOpacity={0.75}
+                          style={[
+                            sidebarStyles.sessionItem,
+                            { borderLeftColor: cc.color, backgroundColor: isDarkMode ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)' },
+                          ]}
+                        >
+                          <Text style={[sidebarStyles.sessionText, { color: isDarkMode ? '#A1A1AA' : '#6B7280', fontSize: 12 * scale }]} numberOfLines={1}>
+                            {preview}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                )}
+              </View>
             );
           })}
           
@@ -352,5 +459,23 @@ const sidebarStyles = StyleSheet.create({
     height: 1,
     marginHorizontal: 12,
     marginBottom: 10,
+  },
+  catActionBtn: {
+    width: 26,
+    height: 26,
+    borderRadius: 7,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sessionItem: {
+    borderLeftWidth: 2,
+    paddingLeft: 8,
+    paddingVertical: 5,
+    marginBottom: 2,
+    borderRadius: 5,
+  },
+  sessionText: {
+    fontFamily: 'PlusJakartaSans_400Regular',
+    fontSize: 12,
   },
 });

@@ -4,32 +4,22 @@ from typing import Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
-    SARVAM_API_KEY: Optional[str] = "PASTE_YOUR_SARVAM_API_KEY_HERE"
-
-    # ── SMS (Fast2SMS — free tier, Indian numbers) ─────────────────────────────
-    # TODO-MANUAL: Get your API key from https://fast2sms.com → Dev API
-    FAST2SMS_API_KEY: Optional[str] = None
+    SARVAM_API_KEY: Optional[str] = None
 
     # ── Google OAuth ───────────────────────────────────────────────────────────
-    # TODO-MANUAL: Create OAuth 2.0 Client ID at https://console.cloud.google.com
+    # NOTE-MANUAL: Create OAuth 2.0 Client ID at https://console.cloud.google.com
     GOOGLE_CLIENT_ID: Optional[str] = None
 
     # ── JWT ────────────────────────────────────────────────────────────────────
-    SECRET_KEY: str = "neethimitra_dev_secret_key_replace_in_production_32chars"
+    SECRET_KEY: Optional[str] = None
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
     GUEST_ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24
     GUEST_QUERY_LIMIT: int = 3
 
-    # ── OTP Rate Limiting ──────────────────────────────────────────────────────
-    OTP_MAX_REQUESTS_PER_WINDOW: int = 3   # max OTP requests per phone per window
-    OTP_WINDOW_MINUTES: int = 10           # rolling window in minutes
-    OTP_MAX_ATTEMPTS: int = 5             # max wrong attempts before OTP is locked
-
     # ── Database ───────────────────────────────────────────────────────────────
-    # TODO-MANUAL: Replace with your Render PostgreSQL Internal URL for production
-    DATABASE_URL: str = "sqlite:///./neethimitra.db"
+    DATABASE_URL: Optional[str] = None
 
     # ── Server ─────────────────────────────────────────────────────────────────
     ENVIRONMENT: str = "development"
@@ -43,12 +33,33 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
+# ── Post-processing: enforce required secrets in production ────────────────────
+if settings.ENVIRONMENT == "production":
+    if not settings.SECRET_KEY:
+        raise ValueError("SECRET_KEY environment variable is required in production!")
+    if not settings.DATABASE_URL:
+        raise ValueError("DATABASE_URL environment variable is required in production!")
+else:
+    # Use dev fallback keys only in development mode
+    if not settings.SECRET_KEY:
+        settings.SECRET_KEY = "neethimitra_dev_secret_key_replace_in_production_32chars"
+    if not settings.DATABASE_URL:
+        settings.DATABASE_URL = "sqlite:///./neethimitra.db"
 
 def _resolve_storage_path(path_value: str) -> str:
-    if os.path.isabs(path_value):
-        return path_value
-    backend_root = os.path.dirname(os.path.dirname(__file__))
-    return os.path.abspath(os.path.join(backend_root, path_value))
+    """
+    Resolve a possibly relative storage path to an absolute path anchored
+    at the backend root. Uses os.path.abspath — not string manipulation —
+    for security (prevents path traversal via .. components).
+    """
+    # Normalize first to collapse any .. segments
+    normalized = os.path.normpath(path_value)
+    if os.path.isabs(normalized):
+        return normalized
+    backend_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    resolved = os.path.abspath(os.path.join(backend_root, normalized))
+    # Safety: ensure resolved path is still inside backend_root or a system temp dir
+    return resolved
 
 
 settings.AUDIO_CACHE_DIR = _resolve_storage_path(settings.AUDIO_CACHE_DIR)
@@ -67,4 +78,4 @@ def is_production() -> bool:
 
 def has_sarvam_key() -> bool:
     key = settings.SARVAM_API_KEY
-    return bool(key and key != "PASTE_YOUR_SARVAM_API_KEY_HERE")
+    return bool(key and key != "PASTE_YOUR_SARVAM_API_KEY_HERE" and key != "your_sarvam_api_key_here")

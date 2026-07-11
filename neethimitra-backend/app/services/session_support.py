@@ -1,12 +1,17 @@
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from app.models import Session as SessionModel, SessionEvent
 
 
-def utcnow_naive() -> datetime:
-    return datetime.utcnow()
+def utcnow() -> datetime:
+    """Always return timezone-aware UTC datetime. Use this everywhere instead of utcnow_naive()."""
+    return datetime.now(timezone.utc)
+
+
+# Keep alias so any remaining references don't crash during transition
+utcnow_naive = utcnow
 
 
 def summarize_text(text: str | None, limit: int = 240) -> str | None:
@@ -20,7 +25,7 @@ def summarize_text(text: str | None, limit: int = 240) -> str | None:
 
 def mark_session_active(session: SessionModel, status: str = "active") -> None:
     session.status = status
-    session.last_activity_at = utcnow_naive()
+    session.last_activity_at = utcnow()
 
 
 def build_session_event(
@@ -34,5 +39,5 @@ def build_session_event(
         user_id=user_id,
         event_type=event_type,
         payload_json=json.dumps(payload, ensure_ascii=False) if payload else None,
-        created_at=utcnow_naive(),
+        created_at=utcnow(),
     )

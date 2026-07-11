@@ -26,7 +26,7 @@ class User(Base):
     # ── Google OAuth fields (added in migration 002) ───────────────────────────
     email = Column(String, unique=True, index=True, nullable=True)
     google_id = Column(String, unique=True, index=True, nullable=True)
-    provider = Column(String, default="phone", nullable=False)  # "phone"|"google"|"guest"
+    provider = Column(String, default="password", nullable=False)  # "password"|"google"|"guest"
     profile_image = Column(String, nullable=True)               # Google profile picture URL
     role = Column(String, default="user", nullable=False)        # "user"|"admin"|"guest"
 
@@ -50,19 +50,6 @@ class RefreshToken(Base):
     created_at = Column(DateTime, default=get_utc_now)
 
     user = relationship("User", back_populates="refresh_tokens")
-
-class OTPRequestRecord(Base):
-    __tablename__ = "otp_requests"
-
-    id = Column(Integer, primary_key=True, index=True)
-    phone = Column(String, index=True, nullable=False)
-    otp_hash = Column(String, nullable=False)
-    expires_at = Column(DateTime, nullable=False)
-    attempt_count = Column(Integer, default=0, nullable=False)
-    sent_at = Column(DateTime, default=get_utc_now, nullable=False)
-    consumed_at = Column(DateTime, nullable=True)
-    channel = Column(String, default="sms", nullable=False)
-    is_used = Column(Boolean, default=False, nullable=False)
 
 class Session(Base):
     __tablename__ = "sessions"

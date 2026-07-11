@@ -9,10 +9,12 @@ from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, Tabl
 
 from app.config import settings
 
-os.makedirs(settings.PDF_DIR, exist_ok=True)
+# NOTE: os.makedirs is intentionally NOT called here at import time.
+# Directory creation is handled once at app startup via ensure_storage_dirs()
+# in config.py, which is called inside app/main.py lifespan.
 
 
-def generate_pdf_file(filepath: str, category: str, content: str):
+def generate_pdf_file(filepath: str, category: str, content: str) -> None:
     doc = SimpleDocTemplate(filepath, pagesize=letter, rightMargin=54, leftMargin=54, topMargin=54, bottomMargin=54)
     styles = getSampleStyleSheet()
 
@@ -79,8 +81,20 @@ def generate_pdf_file(filepath: str, category: str, content: str):
     doc.build(story)
 
 
-async def create_complaint_pdf(session_id: str, category: str, user_messages: list[str], document_texts: list[str]) -> tuple[str, str]:
-    draft_filename = f"complaint_{session_id}.pdf"
+async def create_complaint_pdf(
+    session_id: str,
+    category: str,
+    user_messages: list[str],
+    document_texts: list[str],
+    version: int = 1,
+) -> tuple[str, str]:
+    """
+    Generates a versioned complaint PDF.
+    Filename includes the version number so repeated calls never overwrite previous drafts.
+    e.g., complaint_<session_id>_v1.pdf, complaint_<session_id>_v2.pdf ...
+    """
+    safe_session_id = os.path.basename(session_id)
+    draft_filename = f"complaint_{safe_session_id}_v{version}.pdf"
     dest_path = os.path.join(settings.PDF_DIR, draft_filename)
 
     summary_parts = [

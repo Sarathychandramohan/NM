@@ -7,7 +7,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  Platform, useWindowDimensions, ScrollView, Pressable, Animated,
+  Platform, useWindowDimensions, ScrollView, Pressable, Animated, TextInput,
 } from 'react-native';
 import { useRouter, usePathname } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -20,8 +20,9 @@ import * as Haptics from 'expo-haptics';
 import { UI_TRANSLATIONS } from '@constants/translations';
 import {
   Home, Clock, FolderClosed, User, Mic,
-  Globe, LogOut, ChevronRight, ChevronLeft, Check,
+  Globe, LogOut, ChevronRight, ChevronLeft, ChevronDown, Check, Plus,
   Home as HomeIcon, Briefcase, ShieldAlert, Heart, Scale, MessageSquare,
+  ArrowLeft, Search,
 } from 'lucide-react-native';
 
 const SIDEBAR_FULL = 280;
@@ -108,9 +109,10 @@ function WebAppShellInner({ children, isDesktop }: { children: React.ReactNode; 
 /* ─── Top Header Bar ─────────────────────────────────────────────────────────── */
 function WebTopBar({ isDesktop }: { isDesktop: boolean }) {
   const router = useRouter();
-  const { isDarkMode, selectedLanguage, setLanguage, userName } = useAppStore();
+  const { isDarkMode, selectedLanguage, setLanguage, userName, userEmail, isAnonymousGuest } = useAppStore();
   const C = isDarkMode ? Colors.dark : Colors.light;
   const displayName = userName || 'Guest';
+  const displayPhone = isAnonymousGuest ? 'Guest' : (userEmail ? userEmail : 'Registered User');
   const initial = displayName.charAt(0).toUpperCase();
   const [showDropdown, setShowDropdown] = useState(false);
 
@@ -177,7 +179,7 @@ function WebTopBar({ isDesktop }: { isDesktop: boolean }) {
                         <TouchableOpacity
                           key={lang.code}
                           onPress={() => {
-                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+                            safeImpact(Haptics.ImpactFeedbackStyle.Medium);
                             setLanguage(lang);
                             setShowDropdown(false);
                           }}
@@ -219,6 +221,16 @@ function WebTopBar({ isDesktop }: { isDesktop: boolean }) {
             )}
           </View>
 
+          {/* Username & Email placement */}
+          <View style={{ marginRight: 10, alignItems: 'flex-end', justifyContent: 'center' }}>
+            <Text style={{ fontSize: 13, fontWeight: '700', color: isDarkMode ? '#FFFFFF' : '#111827' }} numberOfLines={1}>
+              {displayName}
+            </Text>
+            <Text style={{ fontSize: 11, color: isDarkMode ? '#9CA3AF' : '#6B7280' }} numberOfLines={1}>
+              {displayPhone}
+            </Text>
+          </View>
+
           {/* User avatar */}
           <TouchableOpacity
             onPress={() => router.push('/(tabs)/profile' as any)}
@@ -250,13 +262,50 @@ function WebSidebar({
 }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { isDarkMode, setOverlay, startSession, logout, userName, userPhone, selectedLanguage } = useAppStore();
+  const { isDarkMode, setOverlay, startSession, sessions, loadSession, logout, userName, userEmail, selectedLanguage } = useAppStore();
   const C = isDarkMode ? Colors.dark : Colors.light;
   const t = UI_TRANSLATIONS[selectedLanguage.code] || UI_TRANSLATIONS['en-IN'];
 
   const displayName = userName || 'Guest Citizen';
-  const displayPhone = userPhone ? `+91 ${userPhone}` : 'Guest';
+  const displayPhone = userEmail ? userEmail : 'Guest';
   const initial = displayName.charAt(0).toUpperCase();
+
+  // Track which categories have their history list expanded
+  const [expandedCats, setExpandedCats] = React.useState<Record<string, boolean>>({});
+  const [showSearchInput, setShowSearchInput] = React.useState(false);
+  const [searchQuery, setSearchQuery] = React.useState('');
+
+  const toggleExpand = (catId: string) => {
+    setExpandedCats((prev) => ({ ...prev, [catId]: !prev[catId] }));
+  };
+
+  // Returns up to 5 most recent sessions for a given category
+  const getRecentForCat = (catId: string) =>
+    sessions.filter((s) => s.categoryId === catId).slice(0, 5);
+
+  // Navigate to most recent session of category OR start new
+  const handleCategoryPress = async (cat: Category) => {
+    const recents = getRecentForCat(cat.id);
+    if (recents.length > 0 && recents[0].messages.length > 0) {
+      await loadSession(recents[0].id);
+    } else {
+      await startSession(cat);
+    }
+    router.push(`/chat/${cat.id}` as any);
+  };
+
+  // Always start a brand new session
+  const handleNewChat = async (cat: Category, e: any) => {
+    e.stopPropagation();
+    await startSession(cat);
+    router.push(`/chat/${cat.id}` as any);
+  };
+
+  // Load and resume a specific past session
+  const handleResumeSession = async (sessionId: string, catId: string) => {
+    await loadSession(sessionId);
+    router.push(`/chat/${catId}` as any);
+  };
 
   const NAV_ITEMS = [
     { label: t.home,        icon: Home,         route: '/(tabs)',               active: pathname === '/' || pathname === '/(tabs)' || pathname === '/index' },
@@ -265,19 +314,15 @@ function WebSidebar({
     { label: t.profile,     icon: User,         route: '/(tabs)/profile',       active: pathname.includes('profile') },
   ];
 
+
   const handleNav = (route: string) => {
     safeImpact(Haptics.ImpactFeedbackStyle.Light);
     router.push(route as any);
   };
 
-  const handleCategoryPress = (cat: Category) => {
-    startSession(cat);
-    router.push(`/chat/${cat.id}` as any);
-  };
-
-  const handleSignOut = async () => {
-    await logout();
-    router.replace('/(auth)/phone-auth' as any);
+  const handleSignOut = () => {
+    safeImpact(Haptics.ImpactFeedbackStyle.Medium);
+    setOverlay('confirm_logout');
   };
 
   const sidebarColors = isDarkMode
@@ -300,25 +345,69 @@ function WebSidebar({
       >
         <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
 
-          {/* User info */}
-          <View style={[
-            styles.sidebarUser,
-            {
+          {/* Search/Find/Back in Sidebar header */}
+          {collapsed ? (
+            <TouchableOpacity
+              onPress={() => onToggle()}
+              style={{ alignSelf: 'center', paddingVertical: 20 }}
+              activeOpacity={0.7}
+            >
+              <Search size={18} color={C.textSecondary} />
+            </TouchableOpacity>
+          ) : (
+            <View style={{
+              borderBottomWidth: 1,
               borderBottomColor: isDarkMode ? 'rgba(255,255,255,0.1)' : '#F3F4F6',
-              justifyContent: collapsed ? 'center' : 'flex-start',
-              paddingHorizontal: collapsed ? 0 : 20,
-            }
-          ]}>
-            <View style={[styles.sidebarAvatar, { backgroundColor: isDarkMode ? 'rgba(255,255,255,0.1)' : '#FFF7ED' }]}>
-              <Text style={[styles.sidebarAvatarText, { color: Colors.orange }]}>{initial}</Text>
-            </View>
-            {!collapsed && (
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.sidebarUserName, { color: C.text }]} numberOfLines={1}>{displayName}</Text>
-                <Text style={[styles.sidebarUserPhone, { color: C.textSecondary }]} numberOfLines={1}>{displayPhone}</Text>
+              paddingVertical: 16,
+              paddingHorizontal: 20,
+            }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                <TouchableOpacity
+                  onPress={() => router.back()}
+                  style={{ padding: 4 }}
+                  activeOpacity={0.7}
+                >
+                  <ArrowLeft size={18} color={C.textSecondary} />
+                </TouchableOpacity>
+                <Text style={{ fontSize: 14, fontFamily: 'PlusJakartaSans_700Bold', color: C.text }}>
+                  {t.navigation}
+                </Text>
+                <TouchableOpacity
+                  onPress={() => setShowSearchInput(!showSearchInput)}
+                  style={{ padding: 4 }}
+                  activeOpacity={0.7}
+                >
+                  <Search size={18} color={C.textSecondary} />
+                </TouchableOpacity>
               </View>
-            )}
-          </View>
+
+              {showSearchInput && (
+                <View style={{
+                  marginTop: 10,
+                  backgroundColor: isDarkMode ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+                  borderRadius: 8,
+                  paddingHorizontal: 10,
+                  paddingVertical: 2,
+                }}>
+                  <TextInput
+                    placeholder={t.searchChats || "Search chats..."}
+                    placeholderTextColor={C.textSecondary}
+                    style={{
+                      height: 32,
+                      color: C.text,
+                      fontSize: 13,
+                      fontFamily: 'PlusJakartaSans_500Medium',
+                      borderStyle: 'none',
+                      outlineStyle: 'none',
+                    } as any}
+                    value={searchQuery}
+                    onChangeText={setSearchQuery}
+                    autoFocus
+                  />
+                </View>
+              )}
+            </View>
+          )}
 
           {/* Voice mic FAB */}
           {!collapsed ? (
@@ -395,30 +484,101 @@ function WebSidebar({
           )}
           {collapsed && <View style={{ height: 8 }} />}
 
-          {CATEGORIES.map((cat) => {
+          {CATEGORIES.filter(cat => {
+            if (!searchQuery) return true;
+            const catLabel = (t[cat.id] ?? cat.label).toLowerCase();
+            const matchesCat = catLabel.includes(searchQuery.toLowerCase());
+            const recents = getRecentForCat(cat.id);
+            const matchesSessions = recents.some(s =>
+              s.messages.some(m => m.text.toLowerCase().includes(searchQuery.toLowerCase()))
+            );
+            return matchesCat || matchesSessions;
+          }).map((cat) => {
             const CatIcon = CATEGORY_ICONS[cat.id] ?? Scale;
             const catColor = Colors.category[cat.colorKey as keyof typeof Colors.category]?.color ?? Colors.orange;
             const catLabel = t[cat.id] ?? cat.label;
             const isActiveCat = pathname.includes(`/chat/${cat.id}`);
+            const recentSessions = getRecentForCat(cat.id);
+            const hasHistory = recentSessions.length > 0;
+            const isExpanded = expandedCats[cat.id] ?? false;
+
             return (
-              <TouchableOpacity
-                key={cat.id}
-                onPress={() => handleCategoryPress(cat)}
-                style={[
+              <View key={cat.id}>
+                {/* Category row */}
+                <View style={[
                   collapsed ? styles.sidebarNavItemMini : styles.sidebarNavItem,
                   isActiveCat && { backgroundColor: isDarkMode ? 'rgba(249,115,22,0.12)' : '#FFF7ED' },
-                ]}
-              >
-                <CatIcon size={15} color={isActiveCat ? Colors.orange : catColor} strokeWidth={1.8} />
-                {!collapsed && (
-                  <>
-                    <Text style={[styles.sidebarNavLabel, { color: C.text, fontSize: 13 }]} numberOfLines={1}>
-                      {catLabel}
-                    </Text>
-                    <ChevronRight size={13} color={C.textHint} strokeWidth={1.5} />
-                  </>
+                  !collapsed && { paddingRight: 4 },
+                ]}>
+                  {/* Icon — tapping navigates */}
+                  <TouchableOpacity
+                    onPress={() => handleCategoryPress(cat)}
+                    style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: 10 }}
+                    activeOpacity={0.7}
+                  >
+                    <CatIcon size={15} color={isActiveCat ? Colors.orange : catColor} strokeWidth={1.8} />
+                    {!collapsed && (
+                      <Text style={[styles.sidebarNavLabel, { color: C.text, fontSize: 13 }]} numberOfLines={1}>
+                        {catLabel}
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+
+                  {/* Plus (new chat) + Chevron (expand) — only in full mode */}
+                  {!collapsed && (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
+                      {/* + new chat */}
+                      <TouchableOpacity
+                        onPress={(e) => handleNewChat(cat, e)}
+                        style={{
+                          width: 24, height: 24, borderRadius: 6, alignItems: 'center', justifyContent: 'center',
+                          backgroundColor: isDarkMode ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        <Plus size={12} color={C.textSecondary} strokeWidth={2.5} />
+                      </TouchableOpacity>
+
+                      {/* Chevron — toggle history */}
+                      <TouchableOpacity
+                        onPress={() => hasHistory && toggleExpand(cat.id)}
+                        style={{ width: 24, height: 24, alignItems: 'center', justifyContent: 'center' }}
+                        activeOpacity={hasHistory ? 0.7 : 1}
+                      >
+                        {isExpanded
+                          ? <ChevronDown size={13} color={hasHistory ? C.textSecondary : 'transparent'} strokeWidth={2} />
+                          : <ChevronRight size={13} color={hasHistory ? C.textSecondary : 'transparent'} strokeWidth={1.5} />
+                        }
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </View>
+
+                {/* Expanded recent sessions sub-list */}
+                {!collapsed && isExpanded && hasHistory && (
+                  <View style={{ paddingLeft: 14, marginBottom: 4 }}>
+                    {recentSessions.map((sess) => {
+                      const lastMsg = sess.messages[sess.messages.length - 1];
+                      const preview = lastMsg ? lastMsg.text.slice(0, 40) + (lastMsg.text.length > 40 ? '…' : '') : 'Empty session';
+                      return (
+                        <TouchableOpacity
+                          key={sess.id}
+                          onPress={() => handleResumeSession(sess.id, cat.id)}
+                          activeOpacity={0.75}
+                          style={[
+                            styles.sidebarSessionItem,
+                            { borderLeftColor: catColor, backgroundColor: isDarkMode ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)' },
+                          ]}
+                        >
+                          <Text style={[styles.sidebarSessionText, { color: C.textSecondary }]} numberOfLines={1}>
+                            {preview}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
                 )}
-              </TouchableOpacity>
+              </View>
             );
           })}
 
@@ -546,6 +706,19 @@ const styles = StyleSheet.create({
     elevation: 4,
     zIndex: 20,
     marginTop: -14, // vertically center (half of height)
+  },
+
+  // Session history item under expanded category
+  sidebarSessionItem: {
+    borderLeftWidth: 2,
+    paddingLeft: 10,
+    paddingVertical: 6,
+    marginBottom: 2,
+    borderRadius: 6,
+  },
+  sidebarSessionText: {
+    fontSize: 12,
+    fontFamily: 'PlusJakartaSans_400Regular',
   },
 
   // Main content

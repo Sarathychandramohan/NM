@@ -84,11 +84,24 @@ export default function DocumentsScreen() {
     } catch { setOverlay('error'); }
   };
 
-  const handleDocPress = (doc: any) => {
+  const handleDocPress = async (doc: any) => {
     if (doc.status === 'failed') {
       showAlert('Analysis Failed', 'Please try uploading a clearer file.');
     } else if (doc.status === 'pending') {
       showAlert('Analysis Pending', 'Document is being analysed. Please check back in a moment.');
+    } else if (doc.sessionId) {
+      try {
+        const { loadSession } = useAppStore.getState();
+        await loadSession(doc.sessionId);
+        const session = useAppStore.getState().activeSession;
+        if (session) {
+          router.replace(`/chat/${session.categoryId}` as any);
+        } else {
+          showAlert('Error', 'Unable to find chat session for this document.');
+        }
+      } catch (err) {
+        showAlert('Error', 'Failed to load chat session.');
+      }
     } else if (doc.fileUrl) {
       if (Platform.OS === 'web') {
         window.open(doc.fileUrl, '_blank');
@@ -231,10 +244,6 @@ export default function DocumentsScreen() {
     </SafeAreaView>
   );
 
-  // Wrap in WebAppShell on web so sidebar + header render correctly
-  if (isWeb) {
-    return <WebAppShell>{screenContent}</WebAppShell>;
-  }
   return screenContent;
 }
 

@@ -1,4 +1,4 @@
-# render.yaml — Render.com infrastructure-as-code for NeethiMitra AI backend
+# render.yaml - Render.com infrastructure-as-code for NeethiMitra AI backend
 # Deploy: Push this file to your GitHub repo, then connect it on Render Dashboard.
 # Docs: https://render.com/docs/yaml-spec
 
@@ -7,7 +7,7 @@ services:
     name: neethimitra-backend
     env: python
     region: singapore          # Closest to India
-    plan: free                 # Free tier — upgrade when needed
+    plan: free                 # Free tier - upgrade when needed
 
     buildCommand: |
       pip install -r requirements.txt &&
@@ -28,10 +28,12 @@ services:
           name: neethimitra-db
           property: connectionString
 
-      # -- JWT (auto-generated strong secret) --------------------------------
+      # -- JWT (Set once manually in Render Dashboard to keep sessions persistent) --
       - key: SECRET_KEY
-        generateValue: true
+        sync: false
 
+      - key: ALGORITHM
+        value: HS256
       - key: ACCESS_TOKEN_EXPIRE_MINUTES
         value: "60"
       - key: REFRESH_TOKEN_EXPIRE_DAYS
@@ -41,32 +43,24 @@ services:
       - key: GUEST_QUERY_LIMIT
         value: "3"
 
-      # -- OTP Rate Limiting --------------------------------------------------
-      - key: OTP_MAX_REQUESTS_PER_WINDOW
-        value: "3"
-      - key: OTP_WINDOW_MINUTES
-        value: "10"
-      - key: OTP_MAX_ATTEMPTS
-        value: "5"
-
-      # -- CORS (add your Render URL + custom domain after deploy) -----------
+      # -- CORS (allows localhost web and Expo Go connections) -----------------
       - key: ALLOWED_ORIGINS
-        value: "https://neethimitra-backend.onrender.com"
+        value: "https://neethimitra-backend.onrender.com,exp://192.168.x.x:8081,http://localhost:8081,http://localhost:19006,http://127.0.0.1:8081"
 
-      # -- Secrets: set manually in Render Dashboard ? Environment -----------
-      # NOTE-MANUAL: Do NOT put actual values here — set in Render Dashboard
+      # -- Secrets: set manually in Render Dashboard > Environment -----------
+      # NOTE-MANUAL: Do NOT put actual values here - set in Render Dashboard
       - key: GOOGLE_CLIENT_ID
         sync: false            # Set manually: https://console.cloud.google.com
 
-      - key: FAST2SMS_API_KEY
-        sync: false            # Set manually: https://fast2sms.com
-
       - key: SARVAM_API_KEY
         sync: false            # Set manually: https://dashboard.sarvam.ai
+
+      - key: MAX_UPLOAD_SIZE_MB
+        value: "10"
 
 databases:
   - name: neethimitra-db
     databaseName: neethimitra
     user: neethimitra
     region: singapore
-    plan: free                 # Render free Postgres (sufficient for hackathon)
+    plan: free                 # Render free Postgres (sufficient for MVP/hackathon)

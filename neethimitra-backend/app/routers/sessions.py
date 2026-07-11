@@ -53,7 +53,7 @@ def list_sessions(
 ):
     return (
         db.query(SessionModel)
-        .filter(SessionModel.user_id == current_user.id, SessionModel.is_active == True)
+        .filter(SessionModel.user_id == current_user.id, SessionModel.is_active.is_(True))
         .order_by(SessionModel.last_activity_at.desc(), SessionModel.created_at.desc())
         .all()
     )
@@ -67,14 +67,15 @@ def get_session(
 ):
     db_session = (
         db.query(SessionModel)
-        .filter(SessionModel.id == session_id, SessionModel.user_id == current_user.id)
+        .filter(
+            SessionModel.id == session_id,
+            SessionModel.user_id == current_user.id,
+            SessionModel.is_active.is_(True),
+        )
         .first()
     )
     if not db_session:
         raise HTTPException(status_code=404, detail="Session not found")
-    mark_session_active(db_session, status=db_session.status or "active")
-    db.commit()
-    db.refresh(db_session)
     return db_session
 
 

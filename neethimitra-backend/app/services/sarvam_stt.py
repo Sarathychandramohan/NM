@@ -1,23 +1,53 @@
+import logging
+
 import httpx
-from fastapi import HTTPException
-from app.config import settings, has_sarvam_key
+
+from app.config import has_sarvam_key, settings
+
+logger = logging.getLogger(__name__)
 
 SARVAM_STT_URL = "https://api.sarvam.ai/speech-to-text"
+
+# Map audio file extensions to their correct MIME types for the multipart upload
+_AUDIO_MIME_TYPES: dict[str, str] = {
+    "wav":  "audio/wav",
+    "mp3":  "audio/mpeg",
+    "m4a":  "audio/mp4",
+    "webm": "audio/webm",
+    "weba": "audio/webm",
+    "ogg":  "audio/ogg",
+    "caf":  "audio/x-caf",
+    "3gp":  "audio/3gpp",
+    "aac":  "audio/aac",
+}
+
+
+def _get_audio_mime_type(filename: str) -> str:
+    """Derive the correct MIME type from the audio file's extension."""
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    mime = _AUDIO_MIME_TYPES.get(ext, "audio/wav")  # safe fallback to wav
+    if mime == "audio/wav" and ext and ext != "wav":
+        logger.warning("Unknown audio extension '.%s' — defaulting to audio/wav MIME type", ext)
+    return mime
+
 
 async def transcribe_audio(file_bytes: bytes, filename: str, language_code: str = "en-IN") -> str:
     """
     Transcribes audio using Sarvam AI Saaras v3.
-    Uses 'transcribe' mode so the user's native-language transcript is preserved.
+    Uses 'translate' mode so regional voice is directly output as English text.
+    Correctly maps audio file extensions to their MIME types — previously hardcoded
+    to 'audio/wav' which caused API errors for MP3/M4A/WebM files.
     """
     if not has_sarvam_key():
-        return "Amazon gave me a damaged product and is refusing my refund."
+        return "I need legal help with my issue."
 
+    mime_type = _get_audio_mime_type(filename)
     headers = {"api-subscription-key": settings.SARVAM_API_KEY}
-    files = {"file": (filename, file_bytes, "audio/wav")}
+    files = {"file": (filename, file_bytes, mime_type)}
     data = {
         "model": "saaras:v3",
         "language_code": language_code,
-        "mode": "transcribe"
+        "mode": "translate",
     }
 
     async with httpx.AsyncClient() as client:
@@ -25,8 +55,8 @@ async def transcribe_audio(file_bytes: bytes, filename: str, language_code: str 
             SARVAM_STT_URL, headers=headers, files=files, data=data, timeout=30.0
         )
         if response.status_code != 200:
-            raise HTTPException(
-                status_code=502,
-                detail=f"Sarvam STT Error ({response.status_code}): {response.text}"
+            logger.error("Sarvam STT error %s: %s", response.status_code, response.text)
+            raise RuntimeError(
+                f"Sarvam STT Error ({response.status_code}): {response.text}"
             )
         return response.json().get("transcript", "")

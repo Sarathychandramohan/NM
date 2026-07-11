@@ -366,18 +366,40 @@ These are the main endpoints your frontend can plan around:
 - `GET /static/complaints/{file}`
 - `GET /static/uploads/{file}`
 
+## Known Backend Bugs & Mismatches
+
+These verified issues inside `neethimitra-backend/` should be resolved to align with the master specification and prevent production errors:
+
+### Critical Bugs
+* **TTS Character Limit Truncation (`sarvam_tts.py`)**: Slices text at 2500 characters instead of 500. Since Bulbul v3 strictly rejects text beyond 500 characters, generating longer legal assistant responses will crash.
+* **Category Classifier Session Lock (`classifier.py`)**: `classify_category` returns the existing session category immediately if set, preventing active chats from being dynamically reclassified when topics shift.
+
+### Significant Bugs
+* **Auth Register/Login Mismatch (`auth.py`)**: Endpoint registration asks for email + password, and OAuth login expects email under the `username` field. This conflicts with the phone-first OTP authentication documented in the master specs.
+* **N+1 SQL Lazy-Loading in Session Lists (`schemas.py`)**: `SessionResponse` includes `messages: List[MessageResponse]` mapping. Fetching the list of sessions triggers lazy-loads for all historical messages, causing database bottlenecks.
+* **Depreciation & Timezone Mismatches (`session_support.py`)**: Naive UTC timestamp generator (`utcnow_naive`) conflicts with SQLAlchemy models using aware `datetime.now(timezone.utc)`.
+
+### Spec Mismatches
+* **Helplines Public Endpoint (`helplines.py`)**: Helpline API router exposes endpoints publicly without auth dependencies, whereas the specs require a JWT token.
+* **Static File Serve Downloads (`files.py`)**: Serving caches using `filename` properties forces attachments header downloads (`Content-Disposition: attachment`), preventing inline playback or viewing in standard browsers.
+* **Limited Complaints History (`complaints.py`)**: Only the latest complaint version is queryable; no endpoint lists older draft versions.
+
 ## Recommended Next Backend Steps
 
 Priority order:
 
-1. Wire real Sarvam-30B legal response service
-2. Wire real Sarvam LID
-3. Implement real SMS OTP sending
-4. Add guest query-limit enforcement
-5. Add WebSocket voice endpoint
-6. Add helpline API and seed data
-7. Add automated tests
-8. Run full end-to-end local verification
+1. Fix the critical TTS limit truncation (slice text at 500 characters).
+2. Allow classifier to dynamically reclassify active sessions instead of locking category.
+3. Switch register and login schema validation to enforce phone number format instead of email.
+4. Remove the N+1 lazy-load loop in SessionResponse lists by omitting deep messages lists in summaries.
+5. Fix naive/aware datetime differences.
+6. Serve audio/complaint responses without forcing file attachments in HTTP headers.
+7. Wire real Sarvam-30B legal response service.
+8. Add guest query-limit enforcement.
+9. Add WebSocket voice endpoint.
+10. Add helpline API and seed data.
+11. Add automated tests.
+12. Run full end-to-end local verification.
 
 ## Verification Already Done
 

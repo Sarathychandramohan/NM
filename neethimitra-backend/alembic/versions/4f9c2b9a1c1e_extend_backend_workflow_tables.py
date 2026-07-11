@@ -101,28 +101,28 @@ def upgrade() -> None:
     op.execute(
         """
         INSERT INTO helplines (category, name, number, available_hours, state, language_code, priority, district, is_national)
-        SELECT 'cyber', 'Cyber Fraud Helpline', '1930', '24x7', NULL, 'en-IN', 1, NULL, 1
+        SELECT 'cyber', 'Cyber Fraud Helpline', '1930', '24x7', NULL, 'en-IN', 1, NULL, true
         WHERE NOT EXISTS (SELECT 1 FROM helplines WHERE category = 'cyber' AND number = '1930')
         """
     )
     op.execute(
         """
         INSERT INTO helplines (category, name, number, available_hours, state, language_code, priority, district, is_national)
-        SELECT 'family', 'Domestic Violence Helpline', '181', '24x7', NULL, 'en-IN', 1, NULL, 1
+        SELECT 'family', 'Domestic Violence Helpline', '181', '24x7', NULL, 'en-IN', 1, NULL, true
         WHERE NOT EXISTS (SELECT 1 FROM helplines WHERE category = 'family' AND number = '181')
         """
     )
     op.execute(
         """
         INSERT INTO helplines (category, name, number, available_hours, state, language_code, priority, district, is_national)
-        SELECT 'general', 'Senior Citizens Helpline', '14567', '24x7', NULL, 'en-IN', 2, NULL, 1
+        SELECT 'general', 'Senior Citizens Helpline', '14567', '24x7', NULL, 'en-IN', 2, NULL, true
         WHERE NOT EXISTS (SELECT 1 FROM helplines WHERE category = 'general' AND number = '14567')
         """
     )
     op.execute(
         """
         INSERT INTO helplines (category, name, number, available_hours, state, language_code, priority, district, is_national)
-        SELECT 'consumer', 'Consumer Rights Helpline', '1915', '24x7', NULL, 'en-IN', 1, NULL, 1
+        SELECT 'consumer', 'Consumer Rights Helpline', '1915', '24x7', NULL, 'en-IN', 1, NULL, true
         WHERE NOT EXISTS (SELECT 1 FROM helplines WHERE category = 'consumer' AND number = '1915')
         """
     )

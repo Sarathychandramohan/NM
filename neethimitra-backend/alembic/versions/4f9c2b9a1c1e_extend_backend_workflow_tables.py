@@ -85,7 +85,7 @@ def upgrade() -> None:
 
     op.execute("UPDATE users SET guest_queries_used = 0 WHERE guest_queries_used IS NULL")
     op.execute("UPDATE users SET status = 'active' WHERE status IS NULL")
-    op.execute("UPDATE refresh_tokens SET revoked_at = created_at WHERE is_revoked = 1 AND revoked_at IS NULL")
+    op.execute("UPDATE refresh_tokens SET revoked_at = created_at WHERE is_revoked = true AND revoked_at IS NULL")
     op.execute("UPDATE sessions SET status = 'active' WHERE status IS NULL")
     op.execute("UPDATE sessions SET source = 'app' WHERE source IS NULL")
     op.execute("UPDATE sessions SET last_activity_at = COALESCE(updated_at, created_at) WHERE last_activity_at IS NULL")
@@ -96,7 +96,7 @@ def upgrade() -> None:
     op.execute("UPDATE complaints SET updated_at = created_at WHERE updated_at IS NULL")
     op.execute("UPDATE helplines SET language_code = 'en-IN' WHERE language_code IS NULL")
     op.execute("UPDATE helplines SET priority = 1 WHERE priority IS NULL")
-    op.execute("UPDATE helplines SET is_national = 0 WHERE is_national IS NULL")
+    op.execute("UPDATE helplines SET is_national = false WHERE is_national IS NULL")
 
     op.execute(
         """

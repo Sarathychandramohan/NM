@@ -1,37 +1,66 @@
 services:
   - type: web
     name: neethimitra-backend
-    runtime: python
+    env: python
     rootDir: neethimitra-backend
-    buildCommand: pip install -r requirements.txt && alembic upgrade head
+    region: singapore          # Closest to India
+    plan: free                 # Free tier - upgrade when needed
+
+    buildCommand: |
+      pip install -r requirements.txt &&
+      alembic upgrade head
+
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+
+    healthCheckPath: /health
+
     envVars:
-      - key: PYTHON_VERSION
-        value: 3.11.0
-      - key: SARVAM_API_KEY
-        sync: false
-      - key: SECRET_KEY
-        sync: false
-      - key: MSG91_AUTH_KEY
-        sync: false
+      # -- Server -------------------------------------------------------------
       - key: ENVIRONMENT
         value: production
+
+      # -- Database (auto-linked from Render Postgres below) ------------------
       - key: DATABASE_URL
         fromDatabase:
           name: neethimitra-db
           property: connectionString
-      - key: AUDIO_CACHE_DIR
-        value: /data/audio
-      - key: PDF_DIR
-        value: /data/complaints
-      - key: UPLOAD_DIR
-        value: /data/uploads
+
+      # -- JWT (Set once manually in Render Dashboard to keep sessions persistent) --
+      - key: SECRET_KEY
+        sync: false
+
+      - key: ALGORITHM
+        value: HS256
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "60"
+      - key: REFRESH_TOKEN_EXPIRE_DAYS
+        value: "30"
+      - key: GUEST_ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "1440"
+      - key: GUEST_QUERY_LIMIT
+        value: "3"
+
+      # -- CORS (allows localhost web and Expo Go connections) -----------------
+      - key: ALLOWED_ORIGINS
+        value: "https://neethimitra-backend.onrender.com,https://neethimitra-frontend.vercel.app"
+
+      # -- Secrets: set manually in Render Dashboard > Environment -----------
+      # NOTE-MANUAL: Do NOT put actual values here - set in Render Dashboard
+      - key: GOOGLE_CLIENT_ID
+        sync: false            # Set manually: https://console.cloud.google.com
+
+      - key: SARVAM_API_KEY
+        sync: false            # Set manually: https://dashboard.sarvam.ai
+
+      - key: MSG91_AUTH_KEY
+        sync: false
+
+      - key: MAX_UPLOAD_SIZE_MB
+        value: "10"
 
 databases:
   - name: neethimitra-db
-    plan: free
-
-disks:
-  - name: neethimitra-storage
-    mountPath: /data
-    sizeGB: 1
+    databaseName: neethimitra
+    user: neethimitra
+    region: singapore
+    plan: free                 # Render free Postgres (sufficient for MVP/hackathon)

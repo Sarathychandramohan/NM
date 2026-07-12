@@ -73,8 +73,8 @@ async def synthesize_speech(text: str, target_language_code: str, speaker: str =
     Respects the 2,500-character limit overall, and chunks text into sections 
     of < 450 characters to stay within Bulbul v3's 500-character per-request limit.
     """
-    if not settings.SARVAM_API_KEY:
-        raise ValueError("SARVAM_API_KEY is not configured.")
+    if not settings.SARVAM_API_KEY or "your_sarvam_api_key" in settings.SARVAM_API_KEY.lower() or "paste_your" in settings.SARVAM_API_KEY.lower() or settings.SARVAM_API_KEY == "":
+        raise ValueError("SARVAM_API_KEY is not configured on the server.")
 
     audio_dir = settings.AUDIO_CACHE_DIR
     os.makedirs(audio_dir, exist_ok=True)

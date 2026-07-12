@@ -33,9 +33,9 @@ def verify_google_id_token(token: str, client_id: Optional[str] = None) -> dict:
     from app.config import settings
 
     resolved_client_id = client_id or settings.GOOGLE_CLIENT_ID
-    if not resolved_client_id:
+    if not resolved_client_id or "google_client_id" in resolved_client_id.lower() or "paste_your" in resolved_client_id.lower() or resolved_client_id == "":
         raise ValueError(
-            "GOOGLE_CLIENT_ID is not configured."
+            "GOOGLE_CLIENT_ID is not configured. Google Sign-In is unavailable."
         )
 
     # -- Real production verification ------------------------------------------

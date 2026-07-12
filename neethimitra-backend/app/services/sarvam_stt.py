@@ -38,8 +38,8 @@ async def transcribe_audio(file_bytes: bytes, filename: str, language_code: str 
     Correctly maps audio file extensions to their MIME types — previously hardcoded
     to 'audio/wav' which caused API errors for MP3/M4A/WebM files.
     """
-    if not settings.SARVAM_API_KEY:
-        raise ValueError("SARVAM_API_KEY is not configured.")
+    if not settings.SARVAM_API_KEY or "your_sarvam_api_key" in settings.SARVAM_API_KEY.lower() or "paste_your" in settings.SARVAM_API_KEY.lower() or settings.SARVAM_API_KEY == "":
+        raise ValueError("SARVAM_API_KEY is not configured on the server.")
 
     mime_type = _get_audio_mime_type(filename)
     headers = {"api-subscription-key": settings.SARVAM_API_KEY}

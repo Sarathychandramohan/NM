@@ -129,8 +129,8 @@ async def extract_text_from_document(file_bytes: bytes, filename: str, mime_type
       catch it with a plain `except Exception` without Starlette confusion.
     - Falls back to a mock response if SARVAM_API_KEY is not set (local dev).
     """
-    if not settings.SARVAM_API_KEY:
-        raise ValueError("SARVAM_API_KEY is not configured.")
+    if not settings.SARVAM_API_KEY or "your_sarvam_api_key" in settings.SARVAM_API_KEY.lower() or "paste_your" in settings.SARVAM_API_KEY.lower() or settings.SARVAM_API_KEY == "":
+        raise ValueError("SARVAM_API_KEY is not configured on the server.")
 
     # Map MIME type to file_type accepted by Sarvam Vision API
     if mime_type in ("image/jpeg", "image/jpg"):

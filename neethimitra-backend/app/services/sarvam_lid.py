@@ -15,8 +15,8 @@ async def detect_language(text: str) -> str:
     if not text or not text.strip():
         return "en-IN"
 
-    if not settings.SARVAM_API_KEY:
-        raise ValueError("SARVAM_API_KEY is not configured.")
+    if not settings.SARVAM_API_KEY or "your_sarvam_api_key" in settings.SARVAM_API_KEY.lower() or "paste_your" in settings.SARVAM_API_KEY.lower() or settings.SARVAM_API_KEY == "":
+        raise ValueError("SARVAM_API_KEY is not configured on the server.")
 
     headers = {
         "api-subscription-key": settings.SARVAM_API_KEY,

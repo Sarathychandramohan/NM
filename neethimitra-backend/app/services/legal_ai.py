@@ -69,8 +69,8 @@ async def get_legal_response(
     resolved_category = classify_category(english_query, category)
     system_prompt = CATEGORY_SYSTEM_PROMPTS.get(resolved_category, CATEGORY_SYSTEM_PROMPTS["consumer"])
 
-    if not settings.SARVAM_API_KEY:
-        raise ValueError("SARVAM_API_KEY is not configured.")
+    if not settings.SARVAM_API_KEY or "your_sarvam_api_key" in settings.SARVAM_API_KEY.lower() or "paste_your" in settings.SARVAM_API_KEY.lower() or settings.SARVAM_API_KEY == "":
+        raise ValueError("SARVAM_API_KEY is not configured on the server.")
 
     response_text = await _call_sarvam_llm(
         system_prompt=system_prompt,

@@ -126,10 +126,9 @@ async def _process_document_async(
         db.close()
 
 
-@router.get("/debug-failed-docs")
-def debug_failed_docs(db: Session = Depends(get_db)):
-    """Temporary debug route to fetch failed documents and errors."""
-    return db.query(Document).filter(Document.analysis_status == "failed").all()
+# ── Bug fix: /user/all-docs MUST be registered before /{session_id}/documents ──
+# FastAPI matches routes in registration order. If this came after the parameterised
+# route, the literal string "user" would be treated as a session_id and fail.
 
 
 @router.get("/user/all-docs", response_model=List[DocumentResponse])

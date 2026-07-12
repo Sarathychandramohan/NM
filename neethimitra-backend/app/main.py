@@ -26,6 +26,17 @@ app.include_router(complaints.router)
 app.include_router(helplines.router)
 app.include_router(files.router)
 
+@app.get("/debug-failed-docs")
+def debug_failed_docs():
+    from app.database import SessionLocal
+    from app.models import Document
+    db = SessionLocal()
+    try:
+        return db.query(Document).filter(Document.analysis_status == "failed").all()
+    finally:
+        db.close()
+
+
 @app.get("/")
 def read_root():
     return {"message": "Welcome to NeethiMitra AI Backend API"}

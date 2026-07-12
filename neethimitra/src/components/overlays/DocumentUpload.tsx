@@ -15,9 +15,15 @@ interface DocumentUploadProps {
 export function DocumentUpload({ onCaptureImage, onPickImage, onPickDocument }: DocumentUploadProps) {
   const { activeOverlay, setOverlay, isDarkMode } = useAppStore();
   const C = isDarkMode ? Colors.dark : Colors.light;
+  const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = useWindowDimensions();
+
+  const isLargeWeb = Platform.OS === 'web' && SCREEN_WIDTH >= 768;
 
   const translateY = useRef(new Animated.Value(320)).current;
   const bgOpacity = useRef(new Animated.Value(0)).current;
+  
+  const scaleVal = useRef(new Animated.Value(0.95)).current;
+  const opacityVal = useRef(new Animated.Value(0)).current;
 
   const isVisible = activeOverlay === 'upload';
 
@@ -25,14 +31,25 @@ export function DocumentUpload({ onCaptureImage, onPickImage, onPickDocument }: 
     if (isVisible) {
       Animated.parallel([
         Animated.timing(bgOpacity, {
-          toValue: 0.4,
-          duration: 200,
+          toValue: 0.45,
+          duration: 220,
           useNativeDriver: Platform.OS !== 'web',
         }),
         Animated.spring(translateY, {
           toValue: 0,
           damping: 24,
           stiffness: 300,
+          useNativeDriver: Platform.OS !== 'web',
+        }),
+        Animated.spring(scaleVal, {
+          toValue: 1.0,
+          damping: 20,
+          stiffness: 260,
+          useNativeDriver: Platform.OS !== 'web',
+        }),
+        Animated.timing(opacityVal, {
+          toValue: 1,
+          duration: 200,
           useNativeDriver: Platform.OS !== 'web',
         }),
       ]).start();
@@ -45,6 +62,16 @@ export function DocumentUpload({ onCaptureImage, onPickImage, onPickDocument }: 
         }),
         Animated.timing(translateY, {
           toValue: 320,
+          duration: 180,
+          useNativeDriver: Platform.OS !== 'web',
+        }),
+        Animated.timing(scaleVal, {
+          toValue: 0.95,
+          duration: 180,
+          useNativeDriver: Platform.OS !== 'web',
+        }),
+        Animated.timing(opacityVal, {
+          toValue: 0,
           duration: 180,
           useNativeDriver: Platform.OS !== 'web',
         }),
@@ -71,8 +98,9 @@ export function DocumentUpload({ onCaptureImage, onPickImage, onPickDocument }: 
       style={{
         position: 'absolute',
         top: 0, left: 0, right: 0, bottom: 0,
-        zIndex: 50,
-        justifyContent: 'flex-end',
+        zIndex: 10000,
+        justifyContent: isLargeWeb ? 'center' : 'flex-end',
+        alignItems: isLargeWeb ? 'center' : 'stretch',
       }}
     >
       {/* Background Dim */}
@@ -87,44 +115,92 @@ export function DocumentUpload({ onCaptureImage, onPickImage, onPickDocument }: 
         <Pressable style={{ flex: 1 }} onPress={handleClose} />
       </Animated.View>
 
-      {/* Sheet Body */}
+      {/* Sheet / Dialog Body */}
       <Animated.View 
         style={{
           backgroundColor: C.surface,
-          transform: [{ translateY: translateY }],
-          position: 'absolute',
-          bottom: 0, left: 0, right: 0,
+          transform: isLargeWeb 
+            ? [{ scale: scaleVal }] 
+            : [{ translateY: translateY }],
+          opacity: isLargeWeb ? opacityVal : 1,
+          width: isLargeWeb ? 400 : '100%',
+          maxWidth: isLargeWeb ? '90%' : '100%',
+          borderRadius: isLargeWeb ? 24 : 0,
+          borderTopLeftRadius: 24,
+          borderTopRightRadius: 24,
+          borderWidth: 1,
+          borderColor: isDarkMode ? '#27272A' : '#E5E7EB',
+          paddingHorizontal: 24,
+          paddingTop: isLargeWeb ? 24 : 12,
+          paddingBottom: isLargeWeb ? 24 : 32,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 10 },
+          shadowOpacity: 0.15,
+          shadowRadius: 15,
+          elevation: 10,
         }}
-        className="w-full rounded-t-[28px] shadow-2xl border-t border-zinc-200/20 px-6 pt-2 pb-8"
       >
-        {/* Drag Handle */}
-        <View className="items-center py-2.5">
-          <View className="w-10 h-1 bg-zinc-300 dark:bg-zinc-700 rounded-full" />
-        </View>
+        {/* Header bar with optional close button for desktop dialog */}
+        {isLargeWeb ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+            <Text style={{ fontSize: 18, fontFamily: 'PlusJakartaSans_700Bold', color: C.text }}>
+              Attach Document
+            </Text>
+            <TouchableOpacity 
+              onPress={handleClose} 
+              activeOpacity={0.7} 
+              style={{ 
+                padding: 6, 
+                borderRadius: 20, 
+                backgroundColor: isDarkMode ? '#27272A' : '#F3F4F6' 
+              }}
+            >
+              <X size={16} color={C.textSecondary} strokeWidth={2.5} />
+            </TouchableOpacity>
+          </View>
+        ) : (
+          /* Mobile Drag Handle */
+          <View style={{ alignItems: 'center', paddingVertical: 10 }}>
+            <View style={{ width: 40, height: 4, backgroundColor: isDarkMode ? '#3F3F46' : '#D1D5DB', borderRadius: 2 }} />
+          </View>
+        )}
 
-        {/* Title */}
-        <View className="mb-4">
-          <Text className="text-[18px] font-jakarta font-bold text-zinc-950 dark:text-zinc-50">
-            Attach Document
+        {!isLargeWeb && (
+          /* Mobile Title text */
+          <View style={{ marginBottom: 16, marginTop: 4 }}>
+            <Text style={{ fontSize: 18, fontFamily: 'PlusJakartaSans_700Bold', color: C.text }}>
+              Attach Document
+            </Text>
+            <Text style={{ fontSize: 12, fontFamily: 'PlusJakartaSans_500Medium', color: C.textHint, marginTop: 2 }}>
+              Add support files to analyze or verify
+            </Text>
+          </View>
+        )}
+
+        {isLargeWeb && (
+          /* Desktop subtext */
+          <Text style={{ fontSize: 13, fontFamily: 'PlusJakartaSans_500Medium', color: C.textSecondary, marginBottom: 20 }}>
+            Upload support files (images or PDF documents) to analyze.
           </Text>
-          <Text className="text-[12px] font-jakarta font-medium text-zinc-500 mt-0.5">
-            Add support files to analyze or verify
-          </Text>
-        </View>
+        )}
 
         {/* Options list */}
-        <View className="gap-2.5 mb-4">
+        <View style={{ gap: 12, marginBottom: isLargeWeb ? 0 : 20 }}>
           {Platform.OS !== 'web' && (
             /* Camera Option */
             <TouchableOpacity
               onPress={() => handleAction(onCaptureImage)}
-              activeOpacity={0.7}
-              className="flex-row items-center p-4 bg-zinc-50 dark:bg-zinc-800 rounded-xl"
+              activeOpacity={0.75}
+              style={{
+                flexDirection: 'row', alignItems: 'center', padding: 16,
+                backgroundColor: isDarkMode ? '#1E1E24' : '#F9FAFB',
+                borderRadius: 16, borderWidth: 1, borderColor: isDarkMode ? '#27272A' : '#F3F4F6',
+              }}
             >
-              <View className="w-10 h-10 rounded-full bg-saffron-100 dark:bg-saffron-950/30 items-center justify-center mr-3">
-                <Camera size={20} color={Colors.orange} />
+              <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: '#FFF7ED', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+                <Camera size={18} color={Colors.orange} />
               </View>
-              <Text className="text-[15px] font-jakarta font-semibold text-zinc-900 dark:text-zinc-100">
+              <Text style={{ fontSize: 15, fontFamily: 'PlusJakartaSans_600SemiBold', color: C.text }}>
                 Take Photo
               </Text>
             </TouchableOpacity>
@@ -133,13 +209,17 @@ export function DocumentUpload({ onCaptureImage, onPickImage, onPickDocument }: 
           {/* Gallery Option */}
           <TouchableOpacity
             onPress={() => handleAction(onPickImage)}
-            activeOpacity={0.7}
-            className="flex-row items-center p-4 bg-zinc-50 dark:bg-zinc-800 rounded-xl"
+            activeOpacity={0.75}
+            style={{
+              flexDirection: 'row', alignItems: 'center', padding: 16,
+              backgroundColor: isDarkMode ? '#1E1E24' : '#F9FAFB',
+              borderRadius: 16, borderWidth: 1, borderColor: isDarkMode ? '#27272A' : '#F3F4F6',
+            }}
           >
-            <View className="w-10 h-10 rounded-full bg-emerald-100 dark:bg-emerald-950/30 items-center justify-center mr-3">
-              <ImageIcon size={20} color={Colors.green} />
+            <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: '#ECFDF5', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+              <ImageIcon size={18} color={Colors.green} />
             </View>
-            <Text className="text-[15px] font-jakarta font-semibold text-zinc-900 dark:text-zinc-100">
+            <Text style={{ fontSize: 15, fontFamily: 'PlusJakartaSans_600SemiBold', color: C.text }}>
               {Platform.OS === 'web' ? 'Upload Image' : 'Choose from Gallery'}
             </Text>
           </TouchableOpacity>
@@ -147,28 +227,37 @@ export function DocumentUpload({ onCaptureImage, onPickImage, onPickDocument }: 
           {/* Files PDF Option */}
           <TouchableOpacity
             onPress={() => handleAction(onPickDocument)}
-            activeOpacity={0.7}
-            className="flex-row items-center p-4 bg-zinc-50 dark:bg-zinc-800 rounded-xl"
+            activeOpacity={0.75}
+            style={{
+              flexDirection: 'row', alignItems: 'center', padding: 16,
+              backgroundColor: isDarkMode ? '#1E1E24' : '#F9FAFB',
+              borderRadius: 16, borderWidth: 1, borderColor: isDarkMode ? '#27272A' : '#F3F4F6',
+            }}
           >
-            <View className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-950/30 items-center justify-center mr-3">
-              <FileText size={20} color="#2563EB" />
+            <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: '#EFF6FF', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+              <FileText size={18} color="#2563EB" />
             </View>
-            <Text className="text-[15px] font-jakarta font-semibold text-zinc-900 dark:text-zinc-100">
+            <Text style={{ fontSize: 15, fontFamily: 'PlusJakartaSans_600SemiBold', color: C.text }}>
               Select PDF File
             </Text>
           </TouchableOpacity>
         </View>
 
-        {/* Separate Cancel card below */}
-        <TouchableOpacity
-          onPress={handleClose}
-          activeOpacity={0.75}
-          className="w-full bg-zinc-100 dark:bg-zinc-800 py-3.5 rounded-xl border border-zinc-200/50 dark:border-zinc-700/50"
-        >
-          <Text className="text-[14px] font-jakarta font-bold text-center text-zinc-700 dark:text-zinc-300">
-            Cancel
-          </Text>
-        </TouchableOpacity>
+        {/* Separate Cancel card below (only on mobile layout) */}
+        {!isLargeWeb && (
+          <TouchableOpacity
+            onPress={handleClose}
+            activeOpacity={0.75}
+            style={{
+              width: '100%', backgroundColor: isDarkMode ? '#27272A' : '#F3F4F6',
+              paddingVertical: 14, borderRadius: 14,
+            }}
+          >
+            <Text style={{ fontSize: 14, fontFamily: 'PlusJakartaSans_700Bold', textAlign: 'center', color: C.textSecondary }}>
+              Cancel
+            </Text>
+          </TouchableOpacity>
+        )}
       </Animated.View>
     </View>
   );

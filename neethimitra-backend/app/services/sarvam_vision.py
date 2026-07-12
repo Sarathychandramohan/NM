@@ -3,7 +3,7 @@ import logging
 
 import httpx
 
-from app.config import has_sarvam_key, settings
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -129,15 +129,8 @@ async def extract_text_from_document(file_bytes: bytes, filename: str, mime_type
       catch it with a plain `except Exception` without Starlette confusion.
     - Falls back to a mock response if SARVAM_API_KEY is not set (local dev).
     """
-    if not has_sarvam_key():
-        await asyncio.sleep(1)  # simulate async behaviour
-        return (
-            f"**[MOCK] Extracted Data from `{filename}`**\n\n"
-            "- Document appears to be a formal legal / financial record.\n"
-            "- Key entities identified: Party name, Date, Amount/Clause.\n"
-            "- Use this data to draft the complaint.\n\n"
-            "*Note: Set SARVAM_API_KEY in .env for real extraction.*"
-        )
+    if not settings.SARVAM_API_KEY:
+        raise ValueError("SARVAM_API_KEY is not configured.")
 
     # Map MIME type to file_type accepted by Sarvam Vision API
     if mime_type in ("image/jpeg", "image/jpg"):

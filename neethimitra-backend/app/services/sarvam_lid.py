@@ -1,6 +1,6 @@
 import logging
 import httpx
-from app.config import settings, has_sarvam_key
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -10,58 +10,32 @@ SARVAM_LID_URL = "https://api.sarvam.ai/text-lid"
 async def detect_language(text: str) -> str:
     """
     Detect the language of the given text using Sarvam AI LID.
-    Falls back to script-based heuristics when API key is not available.
     Returns a BCP-47 language code like 'ta-IN', 'hi-IN', 'en-IN', etc.
     """
     if not text or not text.strip():
         return "en-IN"
 
-    if not has_sarvam_key():
-        return _heuristic_detect(text)
+    if not settings.SARVAM_API_KEY:
+        raise ValueError("SARVAM_API_KEY is not configured.")
 
-    try:
-        headers = {
-            "api-subscription-key": settings.SARVAM_API_KEY,
-            "Content-Type": "application/json",
-        }
-        payload = {"input": text[:500]}  # LID only needs a short sample
+    headers = {
+        "api-subscription-key": settings.SARVAM_API_KEY,
+        "Content-Type": "application/json",
+    }
+    payload = {"input": text[:500]}  # LID only needs a short sample
 
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                SARVAM_LID_URL, headers=headers, json=payload, timeout=10.0
-            )
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            SARVAM_LID_URL, headers=headers, json=payload, timeout=10.0
+        )
 
-        if response.status_code == 200:
-            data = response.json()
-            # Sarvam LID returns {"language_code": "ta-IN", ...}
-            lang_code = data.get("language_code") or data.get("detected_language")
-            if lang_code:
-                return lang_code
+    if response.status_code != 200:
+        logger.error("Sarvam LID error %s: %s", response.status_code, response.text)
+        raise RuntimeError(f"Sarvam LID call returned {response.status_code}: {response.text}")
 
-        logger.warning("Sarvam LID returned %s: %s", response.status_code, response.text)
-    except Exception as exc:
-        logger.warning("Sarvam LID call failed, using heuristic fallback: %s", exc)
+    data = response.json()
+    lang_code = data.get("language_code") or data.get("detected_language")
+    if not lang_code:
+        raise RuntimeError(f"Sarvam LID returned no language code: {data}")
 
-    return _heuristic_detect(text)
-
-
-HEURISTIC_SCRIPTS = {
-    "ta-IN": "அஆஇஈஉஊஎஏஐஒஓகஙசஞடணதநபமயரலவழளறன",
-    "te-IN": "అఆఇఈఉఊఎఏఐఒఓకగచజటడతదపబమయరలవశಷసహ",
-    "kn-IN": "ಅಆಇಈಉಊಎಏಐಒಓಕಗಚಜಟಡತದಪಬಮಯರಲವಶಷಸಹ",
-    "ml-IN": "അആഇഈഉഊഎഏഐഒഓകഗചജടഡതദപബമയരലവശഷസഹ",
-    "hi-IN": "अआइईउऊएऐओऔकखगघचछजझटठडढतथदधपफबभमयरलवशषसह",
-    "pa-IN": "ਅਆਇਈਉਊਏਐਓਔਕਗਚਜਟਡਤਦਪਬਮਯਰਲਵਸ਼ਸਹ",
-    "gu-IN": "અઆઇઈઉઊએઐઓઔકગચજટડતદપબમ",
-    "od-IN": "ଅଆଇଈଉଊଏଐଓଔକଗଚଜଟଡତଦପବମ",
-    "bn-IN": "অআইঈউঊএঐওঔকগচজটডতদপবম"
-}
-
-
-def _heuristic_detect(text: str) -> str:
-    """Script-based heuristic language detection as a fallback."""
-    text_chars = set(text)
-    for lang_code, script_chars in HEURISTIC_SCRIPTS.items():
-        if any(c in text_chars for c in script_chars):
-            return lang_code
-    return "en-IN"
+    return lang_code

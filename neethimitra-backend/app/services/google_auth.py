@@ -32,30 +32,10 @@ def verify_google_id_token(token: str, client_id: Optional[str] = None) -> dict:
     """
     from app.config import settings
 
-    # -- Development/Demo fallback -----------------------------------------------
-    # If the token is a mock token, handle it immediately to avoid parsing crashes.
-    if token.startswith("mock_google_"):
-        parts = token.split("_", 3)
-        mock_email = parts[2] if len(parts) > 2 else "dev@neethimitra.ai"
-        mock_name = parts[3].replace("_", " ") if len(parts) > 3 else "Dev Google User"
-        logger.warning(
-            f"Accepting mock Google token for email: {mock_email}."
-        )
-        return {
-            "sub": f"mock_google_sub_{mock_email}",
-            "email": mock_email,
-            "name": mock_name,
-            "picture": None,
-            "email_verified": True,
-        }
-
     resolved_client_id = client_id or settings.GOOGLE_CLIENT_ID
-
-    # If GOOGLE_CLIENT_ID is not configured and not a mock token, raise configuration error.
     if not resolved_client_id:
         raise ValueError(
-            "GOOGLE_CLIENT_ID is not configured. "
-            "Set it in your .env file from https://console.cloud.google.com"
+            "GOOGLE_CLIENT_ID is not configured."
         )
 
     # -- Real production verification ------------------------------------------

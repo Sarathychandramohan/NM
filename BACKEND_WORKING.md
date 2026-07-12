@@ -63,7 +63,7 @@ The authentication layer relies on JWT Access and Refresh tokens (defined in `ap
   - `POST /api/auth/register`: Signup using name, email, and password.
   - `POST /api/auth/login`: Signin using email/password (returns Access & Refresh JWT).
 - **Google OAuth Login**:
-  - `POST /api/auth/google`: Accepts a Google ID token. In production, this uses Google's API Client to verify authenticity. In development (when `GOOGLE_CLIENT_ID` is unset), it accepts `mock_google_` tokens for testing bypass.
+  - `POST /api/auth/google`: Accepts a Google ID token and uses Google's API Client to verify authenticity against GOOGLE_CLIENT_ID.
 - **Guest Lifecycle**:
   - `POST /api/auth/guest`: Spawns a temporary anonymous account. Returns a standard JWT.
   - **Query Enforcement**: Guest requests are restricted to a configurable threshold (default: 3 queries). Attempting queries beyond this returns a `403 Forbidden` response.
@@ -131,14 +131,4 @@ All file repositories are securely served via FastAPI custom router endpoints:
 2. **Uploaded Documents (`/static/uploads/{file}`)**: Enforces JWT authorization. Only the owner of the document can fetch it.
 3. **Generated PDF Complaints (`/static/complaints/{file}`)**: Enforces JWT authorization. Prevents unauthorized downloads.
 
----
 
-## Development Mock / Fallback Mode
-To facilitate easy local development, testing, and Vercel demos without active API billing, the backend implements a **transparent mock mode** when `SARVAM_API_KEY` is not present (or when network calls fail):
-
-*   **LID & Translate**: Returns text as-is (acts as a bypass).
-*   **Speech-to-Text**: Returns fallback mock transcription.
-*   **Text-to-Speech**: Writes a valid silent WAV file (`mono 16-bit PCM, 22.05kHz`) to prevent frontend audio player crashes.
-*   **Vision OCR**: Generates mock Markdown tables and dummy legal details.
-*   **Legal AI**: Resolves categories and returns beautiful, pre-written structured markdown legal advice, including matching IPC/BNS acts and next-step actions.
-*   **Google OAuth**: Accepts mock ID tokens (`mock_google_{email}_{name}`) and parses them into fake profiles for dev sign-ins.

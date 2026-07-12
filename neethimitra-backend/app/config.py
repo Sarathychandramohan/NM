@@ -80,6 +80,18 @@ def is_production() -> bool:
     return settings.ENVIRONMENT.lower() == "production"
 
 
-def has_sarvam_key() -> bool:
-    key = settings.SARVAM_API_KEY
-    return bool(key and key != "PASTE_YOUR_SARVAM_API_KEY_HERE" and key != "your_sarvam_api_key_here")
+# Check that the required API keys and clients are present at startup
+if not settings.SARVAM_API_KEY or settings.SARVAM_API_KEY in ("PASTE_YOUR_SARVAM_API_KEY_HERE", "your_sarvam_api_key_here", ""):
+    raise ValueError(
+        "Critical Configuration Error: SARVAM_API_KEY is not configured. "
+        "Set it in your environment or .env file to enable live AI services."
+    )
+
+if not settings.GOOGLE_CLIENT_ID or settings.GOOGLE_CLIENT_ID in ("PASTE_YOUR_GOOGLE_CLIENT_ID_HERE", "your_google_client_id_here", ""):
+    raise ValueError(
+        "Critical Configuration Error: GOOGLE_CLIENT_ID is not configured. "
+        "Set it in your environment or .env file to enable Google authentication."
+    )
+
+
+

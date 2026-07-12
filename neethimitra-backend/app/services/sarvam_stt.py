@@ -2,7 +2,7 @@ import logging
 
 import httpx
 
-from app.config import has_sarvam_key, settings
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -38,8 +38,8 @@ async def transcribe_audio(file_bytes: bytes, filename: str, language_code: str 
     Correctly maps audio file extensions to their MIME types — previously hardcoded
     to 'audio/wav' which caused API errors for MP3/M4A/WebM files.
     """
-    if not has_sarvam_key():
-        return "I need legal help with my issue."
+    if not settings.SARVAM_API_KEY:
+        raise ValueError("SARVAM_API_KEY is not configured.")
 
     mime_type = _get_audio_mime_type(filename)
     headers = {"api-subscription-key": settings.SARVAM_API_KEY}
@@ -47,7 +47,7 @@ async def transcribe_audio(file_bytes: bytes, filename: str, language_code: str 
     data = {
         "model": "saaras:v3",
         "language_code": language_code,
-        "mode": "translate",
+        "mode": "transcribe",
     }
 
     async with httpx.AsyncClient() as client:

@@ -1,6 +1,6 @@
 import httpx
 from fastapi import HTTPException
-from app.config import settings, has_sarvam_key
+from app.config import settings
 
 SARVAM_TRANSLATE_URL = "https://api.sarvam.ai/translate"
 
@@ -23,9 +23,8 @@ async def translate_text(
     if source_language_code == target_language_code:
         return text
 
-    if not has_sarvam_key():
-        # In mock mode — return text as-is (assume it's already English)
-        return text
+    if not settings.SARVAM_API_KEY:
+        raise ValueError("SARVAM_API_KEY is not configured.")
 
     headers = {
         "api-subscription-key": settings.SARVAM_API_KEY,

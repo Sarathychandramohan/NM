@@ -116,20 +116,7 @@ export default function PhoneAuthScreen() {
     }
   };
 
-  const handleMockGooglePress = async () => {
-    safeImpact(Haptics.ImpactFeedbackStyle.Light);
-    setLoading(true);
-    setError(null);
-    try {
-      const mockIdToken = `mock_google_${email || 'citizen@neethimitra.ai'}_NeethiMitra Citizen`;
-      await loginWithGoogle(mockIdToken, selectedLanguage.code);
-      router.replace('/(tabs)' as any);
-    } catch (err: any) {
-      setError(err?.message ?? 'Google Sign-In failed.');
-    } finally {
-      setLoading(false);
-    }
-  };
+
 
   const handleAuthSubmit = async () => {
     if (!isValid || isLoading) return;
@@ -356,14 +343,34 @@ export default function PhoneAuthScreen() {
         )}
       </TouchableOpacity>
       {/* ── Google Sign-In Section ── */}
-      {Platform.OS === 'web' && isGoogleEnabled ? (
-        <View style={{ alignItems: 'center', marginTop: 12, marginBottom: 8 }}>
-          <View id="google-signin-btn-container" style={{ height: 44, width: '100%', maxWidth: 320 }} />
-        </View>
+      {Platform.OS === 'web' ? (
+        isGoogleEnabled ? (
+          <View style={{ alignItems: 'center', marginTop: 12, marginBottom: 8 }}>
+            <View id="google-signin-btn-container" style={{ height: 44, width: '100%', maxWidth: 320 }} />
+          </View>
+        ) : (
+          <TouchableOpacity
+            onPress={() => alert("Google Client ID is not configured in this environment.")}
+            activeOpacity={0.7}
+            style={{
+              height: 52, borderRadius: 14,
+              flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+              gap: 10, marginTop: 14, marginBottom: 14,
+              backgroundColor: isDarkMode ? '#18181B' : '#F3F4F6',
+              borderWidth: 1.5,
+              borderColor: isDarkMode ? '#2A2A2A' : '#E5E7EB',
+              opacity: 0.6
+            }}
+          >
+            <Text style={{ fontSize: 16, fontFamily: 'PlusJakartaSans_700Bold', color: '#94A3B8' }}>G</Text>
+            <Text style={{ fontSize: 15, fontFamily: 'PlusJakartaSans_600SemiBold', color: C.textHint }}>
+              Google Sign-In Unavailable
+            </Text>
+          </TouchableOpacity>
+        )
       ) : (
-        /* Fallback Mock Google Login Button for Dev/Demo or Mobile */
         <TouchableOpacity
-          onPress={handleMockGooglePress}
+          onPress={() => alert("Google Sign-In is only supported on Web in this demo.")}
           activeOpacity={0.7}
           style={{
             height: 52, borderRadius: 14,
@@ -376,7 +383,7 @@ export default function PhoneAuthScreen() {
         >
           <Text style={{ fontSize: 16, fontFamily: 'PlusJakartaSans_700Bold', color: '#4285F4' }}>G</Text>
           <Text style={{ fontSize: 15, fontFamily: 'PlusJakartaSans_600SemiBold', color: C.text }}>
-            {t.continueWithGoogle || 'Continue with Google'}
+            Continue with Google
           </Text>
         </TouchableOpacity>
       )}

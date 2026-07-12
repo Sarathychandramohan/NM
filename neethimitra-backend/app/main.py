@@ -32,7 +32,7 @@ def debug_failed_docs():
     from app.models import Document
     db = SessionLocal()
     try:
-        return db.query(Document).filter(Document.analysis_status == "failed").all()
+        return db.query(Document).all()
     finally:
         db.close()
 

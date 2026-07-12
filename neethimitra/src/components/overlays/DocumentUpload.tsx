@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { View, Text, TouchableOpacity, Pressable, useWindowDimensions } from 'react-native';
+import { View, Text, TouchableOpacity, Pressable, useWindowDimensions, Platform } from 'react-native';
 import { Camera, Image as ImageIcon, FileText, X } from 'lucide-react-native';
 import { useAppStore } from '@store/useAppStore';
 import { Colors } from '@constants/colors';
@@ -93,21 +93,23 @@ export function DocumentUpload({ onCaptureImage, onPickImage, onPickDocument }: 
           </Text>
         </View>
 
-        {/* 3 Options list */}
+        {/* Options list */}
         <View className="gap-2.5 mb-4">
-          {/* Camera Option */}
-          <TouchableOpacity
-            onPress={() => handleAction(onCaptureImage)}
-            activeOpacity={0.7}
-            className="flex-row items-center p-4 bg-zinc-50 dark:bg-zinc-800 rounded-xl"
-          >
-            <View className="w-10 h-10 rounded-full bg-saffron-100 dark:bg-saffron-950/30 items-center justify-center mr-3">
-              <Camera size={20} color={Colors.orange} />
-            </View>
-            <Text className="text-[15px] font-jakarta font-semibold text-zinc-900 dark:text-zinc-100">
-              Take Photo
-            </Text>
-          </TouchableOpacity>
+          {Platform.OS !== 'web' && (
+            /* Camera Option */
+            <TouchableOpacity
+              onPress={() => handleAction(onCaptureImage)}
+              activeOpacity={0.7}
+              className="flex-row items-center p-4 bg-zinc-50 dark:bg-zinc-800 rounded-xl"
+            >
+              <View className="w-10 h-10 rounded-full bg-saffron-100 dark:bg-saffron-950/30 items-center justify-center mr-3">
+                <Camera size={20} color={Colors.orange} />
+              </View>
+              <Text className="text-[15px] font-jakarta font-semibold text-zinc-900 dark:text-zinc-100">
+                Take Photo
+              </Text>
+            </TouchableOpacity>
+          )}
 
           {/* Gallery Option */}
           <TouchableOpacity
@@ -119,7 +121,7 @@ export function DocumentUpload({ onCaptureImage, onPickImage, onPickDocument }: 
               <ImageIcon size={20} color={Colors.green} />
             </View>
             <Text className="text-[15px] font-jakarta font-semibold text-zinc-900 dark:text-zinc-100">
-              Choose from Gallery
+              {Platform.OS === 'web' ? 'Upload Image' : 'Choose from Gallery'}
             </Text>
           </TouchableOpacity>
 

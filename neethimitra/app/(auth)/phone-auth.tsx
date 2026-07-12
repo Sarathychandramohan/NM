@@ -280,28 +280,7 @@ export default function PhoneAuthScreen() {
           </>
         )}
       </TouchableOpacity>
-
-      <Divider />
-
-      {/* ── Google Sign-In Button ── */}
-      <TouchableOpacity
-        disabled={!isGoogleEnabled}
-        activeOpacity={0.7}
-        style={{
-          height: 52, borderRadius: 14,
-          flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-          gap: 10, marginBottom: 14,
-          backgroundColor: isDarkMode ? '#18181B' : '#F3F4F6',
-          opacity: isGoogleEnabled ? 1 : 0.65,
-          borderWidth: 1.5,
-          borderColor: isDarkMode ? '#2A2A2A' : '#E5E7EB',
-        }}
-      >
-        <Text style={{ fontSize: 16, fontFamily: 'PlusJakartaSans_700Bold', color: '#4285F4' }}>G</Text>
-        <Text style={{ fontSize: 15, fontFamily: 'PlusJakartaSans_600SemiBold', color: C.text }}>
-          Google Sign-In coming soon
-        </Text>
-      </TouchableOpacity>
+      <View style={{ height: 16 }} />
 
       {/* Guest button + limitations card */}
       <TouchableOpacity onPress={handleGuest} activeOpacity={0.7} style={styles.guestBtn}>

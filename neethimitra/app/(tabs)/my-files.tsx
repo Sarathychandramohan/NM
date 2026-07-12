@@ -68,6 +68,10 @@ export default function DocumentsScreen() {
 
   const handleCaptureImage = async () => {
     try {
+      if (Platform.OS === 'web') {
+        handlePickImage();
+        return;
+      }
       const perm = await ImagePicker.requestCameraPermissionsAsync();
       if (!perm.granted) { showAlert(t.permissionDenied, t.cameraAccessRequired); return; }
       const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.8 });
@@ -81,8 +85,10 @@ export default function DocumentsScreen() {
 
   const handlePickImage = async () => {
     try {
-      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!perm.granted) { showAlert(t.permissionDenied, t.galleryAccessRequired); return; }
+      if (Platform.OS !== 'web') {
+        const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (!perm.granted) { showAlert(t.permissionDenied, t.galleryAccessRequired); return; }
+      }
       const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.8 });
       if (!result.canceled && result.assets?.length) {
         const a = result.assets[0];

@@ -443,8 +443,10 @@ export default function ChatScreen() {
   const handlePickImage = async () => {
     if (isAnonymousGuest) { setOverlay('login_prompt'); return; }
     try {
-      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!perm.granted) { showAlert(t.permissionDenied, t.galleryAccessRequired); return; }
+      if (Platform.OS !== 'web') {
+        const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (!perm.granted) { showAlert(t.permissionDenied, t.galleryAccessRequired); return; }
+      }
       const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.8 });
       if (!result.canceled && result.assets?.length) {
         const a = result.assets[0];
@@ -457,8 +459,16 @@ export default function ChatScreen() {
   const handleCaptureImage = async () => {
     if (isAnonymousGuest) { setOverlay('login_prompt'); return; }
     try {
-      // On web, camera capture isn't supported — fall back to gallery picker
-      if (Platform.OS === 'web') { handlePickImage(); return; }
+      // On web, camera capture isn't supported — fall back to gallery/file picker
+      if (Platform.OS === 'web') {
+        const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.8 });
+        if (!result.canceled && result.assets?.length) {
+          const a = result.assets[0];
+          await uploadDocument(a.uri, a.fileName ?? `image_${Date.now()}.jpg`, getImageMimeType(a));
+          setOverlay('success');
+        }
+        return;
+      }
       const perm = await ImagePicker.requestCameraPermissionsAsync();
       if (!perm.granted) { showAlert(t.permissionDenied, t.cameraAccessRequired); return; }
       const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.8 });

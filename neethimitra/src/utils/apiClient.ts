@@ -10,7 +10,7 @@ const ALLOWED_BASES: string[] = [
 ];
 
 export const API_BASE_URL: string = process.env.EXPO_PUBLIC_API_URL || (Platform.OS === 'web'
-  ? 'http://127.0.0.1:8000'
+  ? 'https://neethimitra-backend.onrender.com'
   : 'http://10.0.2.2:8000');
 
 export function apiClient(path: string, options?: RequestInit): Promise<Response> {

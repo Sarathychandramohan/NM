@@ -30,9 +30,17 @@ import AnimatedR, {
   withTiming,
   Easing,
 } from 'react-native-reanimated';
-import { safeImpact, safeNotification } from '@/utils/haptics';
+import { safeImpact } from '@/utils/haptics';
 import * as Haptics from 'expo-haptics';
 
+function getImageMimeType(asset: ImagePicker.ImagePickerAsset): string {
+  if (asset.mimeType) return asset.mimeType;
+  const filename = asset.fileName || asset.uri;
+  const ext = filename.split('.').pop()?.toLowerCase();
+  if (ext === 'png') return 'image/png';
+  if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg';
+  return 'image/jpeg';
+}
 
 const CATEGORY_ICONS: Record<string, { Icon: any; color: string }> = {
   land:   { Icon: Home,        color: '#78350F' },
@@ -255,7 +263,7 @@ export default function ChatScreen() {
     isDarkMode, activeSession, sendMessageToBackend,
     setOverlay, isProcessing, selectedLanguage, generateComplaint, startSession,
     textSize, isAnonymousGuest, guestQueriesRemaining, decrementQueries, uploadDocument,
-    generateMessageAudio,
+    generateMessageAudio, authToken,
   } = useAppStore();
 
   const player = useAudioPlayer(null);
@@ -399,6 +407,26 @@ export default function ChatScreen() {
     }
   };
 
+  const openProtectedPdf = async () => {
+    if (!pdfUrl) return;
+    if (Platform.OS !== 'web') {
+      Linking.openURL(pdfUrl);
+      return;
+    }
+    try {
+      const response = await fetch(pdfUrl, {
+        headers: authToken ? { Authorization: `Bearer ${authToken}` } : undefined,
+      });
+      if (!response.ok) throw new Error(`PDF fetch failed: ${response.status}`);
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      window.open(objectUrl, '_blank');
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
+    } catch {
+      showAlert(t.draftingError, 'Unable to open the PDF. Please sign in again and retry.');
+    }
+  };
+
   // ── File / Camera handlers (wired to DocumentUpload overlay) ──────────────
   const handlePickDocument = async () => {
     if (isAnonymousGuest) { setOverlay('login_prompt'); return; }
@@ -420,7 +448,7 @@ export default function ChatScreen() {
       const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.8 });
       if (!result.canceled && result.assets?.length) {
         const a = result.assets[0];
-        await uploadDocument(a.uri, a.fileName ?? `image_${Date.now()}.jpg`, 'Image/Document');
+        await uploadDocument(a.uri, a.fileName ?? `image_${Date.now()}.jpg`, getImageMimeType(a));
         setOverlay('success');
       }
     } catch { setOverlay('error'); }
@@ -436,7 +464,7 @@ export default function ChatScreen() {
       const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.8 });
       if (!result.canceled && result.assets?.length) {
         const a = result.assets[0];
-        await uploadDocument(a.uri, a.fileName ?? `capture_${Date.now()}.jpg`, 'Image/Document');
+        await uploadDocument(a.uri, a.fileName ?? `capture_${Date.now()}.jpg`, getImageMimeType(a));
         setOverlay('success');
       }
     } catch { setOverlay('error'); }
@@ -636,7 +664,7 @@ export default function ChatScreen() {
               <Text style={[styles.pdfSub, { fontSize: 11 * scale }]}>{t.pdfSub}</Text>
             </View>
             <TouchableOpacity
-              onPress={() => Platform.OS === 'web' ? (window as any).open(pdfUrl, '_blank') : Linking.openURL(pdfUrl!)}
+              onPress={openProtectedPdf}
               style={styles.pdfBtn}
             >
               <Text style={[styles.pdfBtnText, { fontSize: 12 * scale }]}>{t.open}</Text>

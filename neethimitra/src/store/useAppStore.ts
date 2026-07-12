@@ -185,6 +185,24 @@ function authHeaders(token: string | null): Record<string, string> {
   return h;
 }
 
+function uploadMimeType(filename: string, providedType?: string): string {
+  const type = providedType?.toLowerCase();
+  if (type === 'application/pdf' || type === 'image/png' || type === 'image/jpeg' || type === 'image/jpg') {
+    return type === 'image/jpg' ? 'image/jpeg' : type;
+  }
+  const ext = filename.split('.').pop()?.toLowerCase();
+  if (ext === 'pdf') return 'application/pdf';
+  if (ext === 'png') return 'image/png';
+  if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg';
+  return providedType || 'application/octet-stream';
+}
+
+function authRequiredMessage(isGuest: boolean): string {
+  return isGuest
+    ? 'Guest query limit reached. Please sign in to continue.'
+    : 'Your session has expired. Please sign in again to continue.';
+}
+
 export const useAppStore = create<AppState>()(
   persist(
     (set, get) => ({
@@ -389,6 +407,26 @@ export const useAppStore = create<AppState>()(
                 sessions: s.sessions.map((sess) => sess.id === updated.id ? updated : sess),
               };
             });
+          } else if (response.status === 401 || response.status === 403) {
+            const isGuest = get().isAnonymousGuest;
+            set({
+              activeOverlay: 'login_prompt',
+              guestQueriesRemaining: isGuest ? 0 : get().guestQueriesRemaining,
+            });
+            const aiMsg: Message = {
+              id: (Date.now() + 1).toString(),
+              role: 'assistant',
+              text: authRequiredMessage(isGuest),
+              timestamp: new Date(),
+            };
+            set((s) => {
+              if (!s.activeSession) return s;
+              const updated = { ...s.activeSession, messages: [...s.activeSession.messages, aiMsg] };
+              return {
+                activeSession: updated,
+                sessions: s.sessions.map((sess) => sess.id === updated.id ? updated : sess),
+              };
+            });
           } else {
             throw new Error(`Backend error: ${response.status}`);
           }
@@ -444,11 +482,16 @@ export const useAppStore = create<AppState>()(
         try {
           // React Native FormData: pass { uri, type, name } object — works on both platforms
           const formData = new FormData();
-          formData.append('audio_file', {
-            uri: audioUri,
-            type: 'audio/wav',
-            name: 'voice_recording.wav',
-          } as any);
+          if (Platform.OS === 'web') {
+            const audioBlob = await fetch(audioUri).then((res) => res.blob());
+            formData.append('audio_file', audioBlob, 'voice_recording.webm');
+          } else {
+            formData.append('audio_file', {
+              uri: audioUri,
+              type: 'audio/wav',
+              name: 'voice_recording.wav',
+            } as any);
+          }
 
           const headers: Record<string, string> = {};
           if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
@@ -481,6 +524,26 @@ export const useAppStore = create<AppState>()(
               if (!s.activeSession) return s;
               const filtered = s.activeSession.messages.filter((m) => m.id !== userMsg.id);
               const updated = { ...s.activeSession, messages: [...filtered, realUserMsg, aiMsg] };
+              return {
+                activeSession: updated,
+                sessions: s.sessions.map((sess) => sess.id === updated.id ? updated : sess),
+              };
+            });
+          } else if (response.status === 401 || response.status === 403) {
+            const isGuest = get().isAnonymousGuest;
+            set({
+              activeOverlay: 'login_prompt',
+              guestQueriesRemaining: isGuest ? 0 : get().guestQueriesRemaining,
+            });
+            const aiMsg: Message = {
+              id: (Date.now() + 1).toString(),
+              role: 'assistant',
+              text: authRequiredMessage(isGuest),
+              timestamp: new Date(),
+            };
+            set((s) => {
+              if (!s.activeSession) return s;
+              const updated = { ...s.activeSession, messages: [...s.activeSession.messages, aiMsg] };
               return {
                 activeSession: updated,
                 sessions: s.sessions.map((sess) => sess.id === updated.id ? updated : sess),
@@ -589,15 +652,22 @@ export const useAppStore = create<AppState>()(
         let sessionId = activeSession ? activeSession.id : null;
         
         if (!sessionId) {
-          await get().startSession({ id: 'general', name: 'General Query' } as any);
+          await get().startSession({
+            id: 'general',
+            label: 'General Legal Query',
+            emoji: '💬',
+            description: '',
+            colorKey: 'general',
+          });
           const newActive = get().activeSession;
           sessionId = newActive ? newActive.id : 'general_session';
         }
+        const mimeType = uploadMimeType(filename, type);
 
         const newDoc: UploadedDoc = {
           id: Date.now().toString(),
           name: filename,
-          type,
+          type: mimeType,
           emoji: '📄',
           date: new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }),
           status: 'pending',
@@ -608,7 +678,7 @@ export const useAppStore = create<AppState>()(
 
         try {
           const formData = new FormData();
-          formData.append('file', { uri, type: type || 'application/octet-stream', name: filename } as any);
+          formData.append('file', { uri, type: mimeType, name: filename } as any);
 
           const uploadHeaders: Record<string, string> = {};
           if (authToken) uploadHeaders['Authorization'] = `Bearer ${authToken}`;

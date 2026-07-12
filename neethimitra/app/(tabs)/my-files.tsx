@@ -8,7 +8,6 @@ import { Colors } from '@constants/colors';
 import { useAppStore, getTextScale } from '@store/useAppStore';
 import { TopAppBar } from '@/components/ui/TopAppBar';
 import { DocumentUpload } from '@/components/overlays/DocumentUpload';
-import { WebAppShell } from '@/components/web/WebAppShell';
 import { UI_TRANSLATIONS } from '@constants/translations';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
@@ -25,6 +24,15 @@ const DOC_TYPE_ICONS: Record<string, any> = {
   'RTI Reply':  FileText,
   'Court Notice': Scale,
 };
+
+function getImageMimeType(asset: ImagePicker.ImagePickerAsset): string {
+  if (asset.mimeType) return asset.mimeType;
+  const filename = asset.fileName || asset.uri;
+  const ext = filename.split('.').pop()?.toLowerCase();
+  if (ext === 'png') return 'image/png';
+  if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg';
+  return 'image/jpeg';
+}
 
 export default function DocumentsScreen() {
   const { isDarkMode, documents, uploadDocument, setOverlay, selectedLanguage, textSize, isAnonymousGuest } = useAppStore();
@@ -65,7 +73,7 @@ export default function DocumentsScreen() {
       const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.8 });
       if (!result.canceled && result.assets?.length) {
         const a = result.assets[0];
-        await uploadDocument(a.uri, a.fileName ?? `capture_${Date.now()}.jpg`, 'Image/Document');
+        await uploadDocument(a.uri, a.fileName ?? `capture_${Date.now()}.jpg`, getImageMimeType(a));
         setOverlay('success');
       }
     } catch { setOverlay('error'); }
@@ -78,7 +86,7 @@ export default function DocumentsScreen() {
       const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.8 });
       if (!result.canceled && result.assets?.length) {
         const a = result.assets[0];
-        await uploadDocument(a.uri, a.fileName ?? `image_${Date.now()}.jpg`, 'Image/Document');
+        await uploadDocument(a.uri, a.fileName ?? `image_${Date.now()}.jpg`, getImageMimeType(a));
         setOverlay('success');
       }
     } catch { setOverlay('error'); }

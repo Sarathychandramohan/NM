@@ -25,7 +25,7 @@ const WEB_FEATURES = [
 
 export default function PhoneAuthScreen() {
   const router = useRouter();
-  const { enableGuest, login, register, upgradeGuestAccount, loginWithGoogle, isDarkMode, selectedLanguage, isAnonymousGuest, setOverlay } = useAppStore();
+  const { enableGuest, login, register, upgradeGuestAccount, isDarkMode, selectedLanguage, isAnonymousGuest, setOverlay } = useAppStore();
   const { width } = useWindowDimensions();
   const C = isDarkMode ? Colors.dark : Colors.light;
   const t = UI_TRANSLATIONS[selectedLanguage.code] || UI_TRANSLATIONS['en-IN'];
@@ -54,6 +54,7 @@ export default function PhoneAuthScreen() {
     : (isNameValid && isEmailValid && isPasswordValid);
 
   const isDesktop = isWeb && width >= 900;
+  const isGoogleEnabled = false;
 
   const handleAuthSubmit = async () => {
     if (!isValid || isLoading) return;
@@ -82,23 +83,6 @@ export default function PhoneAuthScreen() {
     safeImpact(Haptics.ImpactFeedbackStyle.Light);
     await enableGuest();
     router.replace('/(tabs)' as any);
-  };
-
-  const handleGooglePress = async () => {
-    safeImpact(Haptics.ImpactFeedbackStyle.Light);
-    setLoading(true);
-    setError(null);
-    try {
-      // Constructs a dev mock token accepted by the backend when GOOGLE_CLIENT_ID is not set.
-      // In production: replace this with a real Google ID token from expo-auth-session.
-      const mockIdToken = `mock_google_${email || 'citizen@neethimitra.ai'}_NeethiMitra Citizen`;
-      await loginWithGoogle(mockIdToken, selectedLanguage.code);
-      router.replace('/(tabs)' as any);
-    } catch (err: any) {
-      setError(err?.message ?? 'Google Sign-In failed.');
-    } finally {
-      setLoading(false);
-    }
   };
 
   const goToLanding = () => router.back();
@@ -301,20 +285,21 @@ export default function PhoneAuthScreen() {
 
       {/* ── Google Sign-In Button ── */}
       <TouchableOpacity
-        onPress={handleGooglePress}
+        disabled={!isGoogleEnabled}
         activeOpacity={0.7}
         style={{
           height: 52, borderRadius: 14,
           flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
           gap: 10, marginBottom: 14,
           backgroundColor: isDarkMode ? '#18181B' : '#F3F4F6',
+          opacity: isGoogleEnabled ? 1 : 0.65,
           borderWidth: 1.5,
           borderColor: isDarkMode ? '#2A2A2A' : '#E5E7EB',
         }}
       >
         <Text style={{ fontSize: 16, fontFamily: 'PlusJakartaSans_700Bold', color: '#4285F4' }}>G</Text>
         <Text style={{ fontSize: 15, fontFamily: 'PlusJakartaSans_600SemiBold', color: C.text }}>
-          {t.continueWithGoogle}
+          Google Sign-In coming soon
         </Text>
       </TouchableOpacity>
 

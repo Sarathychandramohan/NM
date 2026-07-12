@@ -65,10 +65,14 @@ async def _get_upload_url(client: httpx.AsyncClient, job_id: str, filename: str,
 
 async def _upload_file_to_url(client: httpx.AsyncClient, presigned_url: str, file_bytes: bytes, mime_type: str) -> None:
     """Step 3: PUT raw file bytes to the pre-signed S3 URL."""
+    headers = {
+        "Content-Type": mime_type,
+        "x-ms-blob-type": "BlockBlob"
+    }
     response = await client.put(
         presigned_url,
         content=file_bytes,
-        headers={"Content-Type": mime_type},
+        headers=headers,
         timeout=60.0,
     )
     response.raise_for_status()

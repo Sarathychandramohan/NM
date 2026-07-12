@@ -3,6 +3,7 @@ from app.agent.prompts import CATEGORY_SYSTEM_PROMPTS
 from app.config import settings
 import httpx
 import logging
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -41,13 +42,15 @@ async def _call_sarvam_llm(system_prompt: str, user_message: str, document_conte
         "temperature": 0.3,
     }
 
+    start_time = time.time()
     async with httpx.AsyncClient() as client:
         response = await client.post(
             SARVAM_CHAT_URL,
             headers=headers,
             json=payload,
-            timeout=45.0,
+            timeout=120.0,
         )
+    logger.info(f"get_legal_response LLM call took {time.time()-start_time:.2f}s")
 
     if response.status_code != 200:
         logger.error("Sarvam LLM error %s: %s", response.status_code, response.text)

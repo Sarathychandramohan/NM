@@ -1,6 +1,10 @@
 import httpx
 from fastapi import HTTPException
+import time
+import logging
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 SARVAM_TRANSLATE_URL = "https://api.sarvam.ai/translate"
 
@@ -38,10 +42,12 @@ async def translate_text(
         "output_script": output_script
     }
 
+    start_time = time.time()
     async with httpx.AsyncClient() as client:
         response = await client.post(
-            SARVAM_TRANSLATE_URL, headers=headers, json=payload, timeout=20.0
+            SARVAM_TRANSLATE_URL, headers=headers, json=payload, timeout=30.0
         )
+        logger.info(f"translate_text took {time.time()-start_time:.2f}s")
         if response.status_code != 200:
             raise HTTPException(
                 status_code=502,

@@ -1,5 +1,6 @@
 import logging
 import httpx
+import time
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -24,10 +25,12 @@ async def detect_language(text: str) -> str:
     }
     payload = {"input": text[:500]}  # LID only needs a short sample
 
+    start_time = time.time()
     async with httpx.AsyncClient() as client:
         response = await client.post(
-            SARVAM_LID_URL, headers=headers, json=payload, timeout=10.0
+            SARVAM_LID_URL, headers=headers, json=payload, timeout=30.0
         )
+    logger.info(f"detect_language took {time.time()-start_time:.2f}s")
 
     if response.status_code != 200:
         logger.error("Sarvam LID error %s: %s", response.status_code, response.text)

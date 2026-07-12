@@ -4,6 +4,7 @@ import os
 import struct
 import uuid
 import httpx
+import time
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -93,6 +94,7 @@ async def synthesize_speech(text: str, target_language_code: str, speaker: str =
         "Content-Type": "application/json",
     }
 
+    start_time = time.time()
     async with httpx.AsyncClient() as client:
         for chunk in chunks:
             payload = {
@@ -120,6 +122,8 @@ async def synthesize_speech(text: str, target_language_code: str, speaker: str =
 
             # Decode the base64 audio and append to binaries list
             wav_binaries.append(base64.b64decode(audios[0]))
+
+    logger.info(f"synthesize_speech took {time.time()-start_time:.2f}s")
 
     # Merge all WAV binaries together
     final_wav_data = concatenate_wav_files(wav_binaries)

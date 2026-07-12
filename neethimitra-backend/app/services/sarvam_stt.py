@@ -1,6 +1,7 @@
 import logging
 
 import httpx
+import time
 
 from app.config import settings
 
@@ -50,10 +51,12 @@ async def transcribe_audio(file_bytes: bytes, filename: str, language_code: str 
         "mode": "transcribe",
     }
 
+    start_time = time.time()
     async with httpx.AsyncClient() as client:
         response = await client.post(
             SARVAM_STT_URL, headers=headers, files=files, data=data, timeout=30.0
         )
+        logger.info(f"transcribe_audio took {time.time()-start_time:.2f}s")
         if response.status_code != 200:
             logger.error("Sarvam STT error %s: %s", response.status_code, response.text)
             raise RuntimeError(

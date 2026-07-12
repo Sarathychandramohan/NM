@@ -431,25 +431,24 @@ export const useAppStore = create<AppState>()(
             throw new Error(`Backend error: ${response.status}`);
           }
         } catch (err) {
-          console.warn('sendMessageToBackend: using offline mock.', safeLogVal(err));
-          // BUG-F034 FIX: removed early set({ isProcessing: false }) here;
-          // finally always runs, so it handles the cleanup once.
-          setTimeout(() => {
-            const aiMsg: Message = {
-              id: (Date.now() + 1).toString(),
-              role: 'assistant',
-              text: `[Offline Mode] I couldn't reach the server. Please check your connection and try again.`,
-              timestamp: new Date(),
+          // Surface the real error to the user — do NOT hide it behind an offline mock.
+          // The backend returned a real HTTP error (502/500/401) and we need to show it.
+          console.error('sendMessageToBackend: request failed:', safeLogVal(err));
+          const errMsg = err instanceof Error ? err.message : String(err);
+          const aiMsg: Message = {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            text: `⚠️ Server error: ${errMsg}. Please try again in a moment.`,
+            timestamp: new Date(),
+          };
+          set((s) => {
+            if (!s.activeSession) return s;
+            const updated = { ...s.activeSession, messages: [...s.activeSession.messages, aiMsg] };
+            return {
+              activeSession: updated,
+              sessions: s.sessions.map((sess) => sess.id === updated.id ? updated : sess),
             };
-            set((s) => {
-              if (!s.activeSession) return s;
-              const updated = { ...s.activeSession, messages: [...s.activeSession.messages, aiMsg] };
-              return {
-                activeSession: updated,
-                sessions: s.sessions.map((sess) => sess.id === updated.id ? updated : sess),
-              };
-            });
-          }, 500);
+          });
         } finally {
           set({ isProcessing: false });
         }
@@ -553,11 +552,13 @@ export const useAppStore = create<AppState>()(
             throw new Error(`Voice endpoint error: ${response.status}`);
           }
         } catch (err) {
-          console.warn('sendVoiceRecording: failed:', safeLogVal(err));
+          // Surface the real voice error — do NOT hide it behind an offline mock.
+          console.error('sendVoiceRecording: request failed:', safeLogVal(err));
+          const errMsg = err instanceof Error ? err.message : String(err);
           const aiMsg: Message = {
             id: (Date.now() + 1).toString(),
             role: 'assistant',
-            text: `[Offline Mode] Couldn't process your voice message. Please type your question instead.`,
+            text: `⚠️ Voice processing failed: ${errMsg}. Please try again or type your question instead.`,
             timestamp: new Date(),
           };
           set((s) => {

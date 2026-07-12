@@ -34,8 +34,12 @@ def _get_audio_mime_type(filename: str) -> str:
 
 async def transcribe_audio(file_bytes: bytes, filename: str, language_code: str = "en-IN") -> str:
     """
-    Transcribes audio using Sarvam AI Saaras v3.
-    Uses 'translate' mode so regional voice is directly output as English text.
+    Transcribes audio using Sarvam AI Saaras v3 in 'transcribe' mode.
+
+    mode='transcribe' keeps the output in the original spoken language (e.g., Tamil speech → Tamil text).
+    The caller (send_voice_message) then passes the original-language text through translate_text() to
+    convert it to English for the LLM, and back to the session language for the response.
+
     Correctly maps audio file extensions to their MIME types — previously hardcoded
     to 'audio/wav' which caused API errors for MP3/M4A/WebM files.
     """

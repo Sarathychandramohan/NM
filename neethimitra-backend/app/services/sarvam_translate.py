@@ -47,10 +47,11 @@ async def translate_text(
         response = await client.post(
             SARVAM_TRANSLATE_URL, headers=headers, json=payload, timeout=30.0
         )
-        logger.info(f"translate_text took {time.time()-start_time:.2f}s")
-        if response.status_code != 200:
-            raise HTTPException(
-                status_code=502,
-                detail=f"Sarvam Translate Error ({response.status_code}): {response.text}"
-            )
-        return response.json().get("translated_text", text)
+    elapsed = time.time() - start_time
+    logger.info("translate_text (%s→%s) took %.2fs", source_language_code, target_language_code, elapsed)
+    if response.status_code != 200:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Sarvam Translate Error ({response.status_code}): {response.text}"
+        )
+    return response.json().get("translated_text", text)

@@ -57,16 +57,44 @@ def _get_or_create_dev_user(db: Session) -> User:
 
 
 def _decode_user_from_token(token: str | None, db: Session) -> User | None:
+    """
+    Decodes the JWT and fetches the corresponding user from the database.
+
+    Previously only caught JWTError — any DB exception (e.g. OperationalError
+    when Postgres is momentarily unavailable) would propagate uncaught, crash
+    the uvicorn worker, and surface as an instant 502 with no log output.
+
+    Now catches all exceptions and logs them explicitly so root causes are
+    visible in Render logs.
+    """
     if not token:
         return None
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         user_id = payload.get("sub")
         if user_id is None:
+            logger.warning("JWT decoded successfully but 'sub' claim is missing")
             return None
-    except JWTError:
+    except JWTError as exc:
+        logger.warning("JWT decode failed (invalid/expired token): %s", exc)
         return None
-    return db.query(User).filter(User.id == int(user_id), User.is_active.is_(True)).first()
+    except Exception as exc:
+        # Catches unexpected errors (e.g., misconfigured SECRET_KEY type)
+        logger.exception("Unexpected error during JWT decode: %s", exc)
+        return None
+
+    try:
+        user = db.query(User).filter(User.id == int(user_id), User.is_active.is_(True)).first()
+        return user
+    except Exception as exc:
+        # Critical: DB failure here was silently crashing the worker and causing
+        # an instant 502 with no log. Now we log it and return None → clean 401.
+        logger.exception(
+            "Database error while fetching user (user_id=%s) from token — "
+            "this was previously causing silent worker crash + instant 502: %s",
+            user_id, exc,
+        )
+        return None
 
 
 def get_current_user(
@@ -83,6 +111,12 @@ def get_current_user(
     In production mode (ENVIRONMENT=production):
       - A valid Bearer token is always required. No fallback exists.
     """
+    logger.info(
+        "get_current_user called — env=%s token_present=%s",
+        settings.ENVIRONMENT,
+        bool(token),
+    )
+
     if settings.ENVIRONMENT == "development":
         token_user = _decode_user_from_token(token, db)
         return token_user or _get_or_create_dev_user(db)
@@ -92,9 +126,24 @@ def get_current_user(
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    user = _decode_user_from_token(token, db)
-    if not user:
+
+    try:
+        user = _decode_user_from_token(token, db)
+    except Exception as exc:
+        # Belt-and-suspenders: _decode_user_from_token should never raise
+        # but if it does, log it and return a clean 401 rather than crashing.
+        logger.exception("get_current_user: unexpected exception from _decode_user_from_token: %s", exc)
         raise credentials_exception
+
+    if not user:
+        logger.warning(
+            "get_current_user: no valid user resolved — returning 401. "
+            "token_present=%s env=%s",
+            bool(token), settings.ENVIRONMENT,
+        )
+        raise credentials_exception
+
+    logger.info("get_current_user: authenticated user_id=%s", user.id)
     return user
 
 

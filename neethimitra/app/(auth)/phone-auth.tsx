@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator,
@@ -25,7 +25,7 @@ const WEB_FEATURES = [
 
 export default function PhoneAuthScreen() {
   const router = useRouter();
-  const { enableGuest, login, register, upgradeGuestAccount, isDarkMode, selectedLanguage, isAnonymousGuest, setOverlay } = useAppStore();
+  const { enableGuest, login, register, upgradeGuestAccount, loginWithGoogle, isDarkMode, selectedLanguage, isAnonymousGuest, setOverlay } = useAppStore();
   const { width } = useWindowDimensions();
   const C = isDarkMode ? Colors.dark : Colors.light;
   const t = UI_TRANSLATIONS[selectedLanguage.code] || UI_TRANSLATIONS['en-IN'];
@@ -54,7 +54,82 @@ export default function PhoneAuthScreen() {
     : (isNameValid && isEmailValid && isPasswordValid);
 
   const isDesktop = isWeb && width >= 900;
-  const isGoogleEnabled = false;
+  const isGoogleEnabled = !!process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID;
+
+  // Google OAuth verification setup on Web
+  useEffect(() => {
+    if (Platform.OS !== 'web' || !isGoogleEnabled) return;
+
+    const scriptId = 'google-gsi-client';
+    if (document.getElementById(scriptId)) {
+      initializeGoogleSignIn();
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.id = scriptId;
+    script.src = 'https://accounts.google.com/gsi/client';
+    script.async = true;
+    script.defer = true;
+    script.onload = () => {
+      initializeGoogleSignIn();
+    };
+    document.body.appendChild(script);
+  }, []);
+
+  const initializeGoogleSignIn = () => {
+    const clientId = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID;
+    if (!clientId) return;
+
+    try {
+      (window as any).google?.accounts.id.initialize({
+        client_id: clientId,
+        callback: handleGoogleCredentialResponse,
+      });
+
+      (window as any).google?.accounts.id.renderButton(
+        document.getElementById('google-signin-btn-container'),
+        {
+          theme: isDarkMode ? 'filled_blue' : 'outline',
+          size: 'large',
+          text: 'continue_with',
+          shape: 'rectangular',
+          width: 320,
+        }
+      );
+    } catch (err) {
+      console.warn('Failed to render Google Sign-In button:', err);
+    }
+  };
+
+  const handleGoogleCredentialResponse = async (response: any) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const idToken = response.credential;
+      await loginWithGoogle(idToken, selectedLanguage.code);
+      router.replace('/(tabs)' as any);
+    } catch (err: any) {
+      setError(err?.message ?? 'Google Sign-In failed.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleMockGooglePress = async () => {
+    safeImpact(Haptics.ImpactFeedbackStyle.Light);
+    setLoading(true);
+    setError(null);
+    try {
+      const mockIdToken = `mock_google_${email || 'citizen@neethimitra.ai'}_NeethiMitra Citizen`;
+      await loginWithGoogle(mockIdToken, selectedLanguage.code);
+      router.replace('/(tabs)' as any);
+    } catch (err: any) {
+      setError(err?.message ?? 'Google Sign-In failed.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleAuthSubmit = async () => {
     if (!isValid || isLoading) return;
@@ -280,7 +355,31 @@ export default function PhoneAuthScreen() {
           </>
         )}
       </TouchableOpacity>
-      <View style={{ height: 16 }} />
+      {/* ── Google Sign-In Section ── */}
+      {Platform.OS === 'web' && isGoogleEnabled ? (
+        <View style={{ alignItems: 'center', marginTop: 12, marginBottom: 8 }}>
+          <View id="google-signin-btn-container" style={{ height: 44, width: '100%', maxWidth: 320 }} />
+        </View>
+      ) : (
+        /* Fallback Mock Google Login Button for Dev/Demo or Mobile */
+        <TouchableOpacity
+          onPress={handleMockGooglePress}
+          activeOpacity={0.7}
+          style={{
+            height: 52, borderRadius: 14,
+            flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+            gap: 10, marginTop: 14, marginBottom: 14,
+            backgroundColor: isDarkMode ? '#18181B' : '#F3F4F6',
+            borderWidth: 1.5,
+            borderColor: isDarkMode ? '#2A2A2A' : '#E5E7EB',
+          }}
+        >
+          <Text style={{ fontSize: 16, fontFamily: 'PlusJakartaSans_700Bold', color: '#4285F4' }}>G</Text>
+          <Text style={{ fontSize: 15, fontFamily: 'PlusJakartaSans_600SemiBold', color: C.text }}>
+            {t.continueWithGoogle || 'Continue with Google'}
+          </Text>
+        </TouchableOpacity>
+      )}
 
       {/* Guest button + limitations card */}
       <TouchableOpacity onPress={handleGuest} activeOpacity={0.7} style={styles.guestBtn}>

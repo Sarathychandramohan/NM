@@ -1,5 +1,7 @@
 import os
 import uuid
+import logging
+import traceback
 from typing import List
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile
@@ -13,6 +15,7 @@ from app.schemas import DocumentResponse
 from app.services.sarvam_vision import extract_text_from_document
 from app.services.session_support import build_session_event, mark_session_active, summarize_text, utcnow
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/sessions", tags=["documents"])
 
 ALLOWED_DOCUMENT_TYPES = {
@@ -75,8 +78,10 @@ async def _process_document_async(
             db_doc.extracted_summary = summarize_text(extracted_markdown)
             db_doc.analysis_error = None
         except Exception as exc:
+            tb = traceback.format_exc()
+            logger.exception("Document processing failed for ID %s (%s): %s", document_id, original_filename, str(exc))
             db_doc.analysis_status = "failed"
-            db_doc.analysis_error = str(exc)
+            db_doc.analysis_error = f"{str(exc)}\n{tb}"
 
         db_doc.processed_at = utcnow()
 
@@ -121,9 +126,12 @@ async def _process_document_async(
         db.close()
 
 
-# ── Bug fix: /user/all-docs MUST be registered before /{session_id}/documents ──
-# FastAPI matches routes in registration order. If this came after the parameterised
-# route, the literal string "user" would be treated as a session_id and fail.
+@router.get("/debug-failed-docs")
+def debug_failed_docs(db: Session = Depends(get_db)):
+    """Temporary debug route to fetch failed documents and errors."""
+    return db.query(Document).filter(Document.analysis_status == "failed").all()
+
+
 @router.get("/user/all-docs", response_model=List[DocumentResponse])
 def get_user_documents(
     db: Session = Depends(get_db),

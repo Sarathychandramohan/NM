@@ -2,426 +2,143 @@
 
 ## Purpose
 
-This file is the working reference for the `neethimitra-backend` service inside `D:\NeethiMithra AI`.
-It summarizes what the backend is supposed to do, what has already been built, what is production-ready enough for frontend integration later, and what still needs to be completed.
-
-The source of truth for the intended product flow is the uploaded Word master prompt:
-`C:\Users\SARATHY\Downloads\NeethiMitra AI master.docx`
-
-## Core Backend Function
-
-NeethiMitra backend is a FastAPI service for a voice-first multilingual legal-aid app.
-
-Main job of the backend:
-
-1. Accept citizen input as text or voice
-2. Detect and preserve the user language
-3. Translate legal queries into English for AI reasoning
-4. Route the query into the correct legal category
-5. Generate legal guidance
-6. Translate the answer back into the user language
-7. Generate TTS audio for the answer
-8. Support document uploads for legal context
-9. Generate downloadable complaint PDFs
-10. Expose clean APIs for the frontend app
-
-## Intended Master Pipeline
-
-### Voice flow
-
-1. Voice comes from frontend
-2. STT transcribes in native language
-3. Language ID confirms the exact language code
-4. Translation converts native language to English in formal mode
-5. Legal AI classifies and answers the query
-6. Translation converts English back to native language in modern-colloquial mode
-7. TTS generates audio response
-8. Backend returns text response, audio URL, and optionally complaint PDF URL
-
-### Text flow
-
-1. User types in native language
-2. Language ID runs on the text
-3. Translation converts to English
-4. Legal AI answers
-5. Translation converts answer back to native language
-6. TTS audio is also generated for accessibility
-
-### Document flow
-
-1. User uploads PDF or image
-2. Backend stores the file
-3. Background task runs Sarvam Vision extraction
-4. Extracted text is saved in DB
-5. Future legal responses can use that document context
-
-## Current Backend Structure
-
-Backend folder:
-`D:\NeethiMithra AI\neethimitra-backend`
-
-Important files:
-
-- `app/main.py`
-- `app/config.py`
-- `app/database.py`
-- `app/models.py`
-- `app/schemas.py`
-- `app/core/security.py`
-- `app/core/dependencies.py`
-- `app/routers/auth.py`
-- `app/routers/sessions.py`
-- `app/routers/chat.py`
-- `app/routers/documents.py`
-- `app/routers/complaints.py`
-- `app/routers/files.py`
-- `app/services/sarvam_stt.py`
-- `app/services/sarvam_lid.py`
-- `app/services/sarvam_translate.py`
-- `app/services/sarvam_tts.py`
-- `app/services/sarvam_vision.py`
-- `app/services/legal_ai.py`
-- `app/services/pdf_generator.py`
-- `app/agent/classifier.py`
-- `app/agent/prompts.py`
-
-## What Has Been Implemented
-
-### 1. Config and storage
-
-Implemented in `app/config.py`
-
-- Environment-based settings
-- Upload size limit
-- Dedicated storage directories for:
-  - audio
-  - complaint PDFs
-  - uploads
-- Path resolution for local and production storage
-- Storage directory creation helper
-
-### 2. Database and models
-
-Implemented in `app/models.py`
-
-Current core tables:
-
-- `users`
-- `refresh_tokens`
-- `sessions`
-- `messages`
-- `documents`
-- `complaints`
-- `helplines`
-
-Added fields for backend readiness:
-
-- `messages.category`
-- `documents.sarvam_job_id`
-
-Migration added:
-
-- `alembic/versions/6c8e3df8b7f1_add_message_category_and_document_job.py`
-
-### 3. Auth layer
-
-Implemented in `app/routers/auth.py`
-
-Available auth flows:
-
-- `POST /api/auth/register`
-- `POST /api/auth/login`
-- `POST /api/auth/request-otp`
-- `POST /api/auth/verify-otp`
-- `POST /api/auth/refresh`
-- `POST /api/auth/logout`
-- `POST /api/auth/guest`
-
-Current auth status:
-
-- Phone normalization added
-- Access token issuing works
-- Refresh token rotation works
-- Guest flow works
-- OTP flow is scaffolded and frontend-ready
-- Real SMS provider is not yet wired
-
-### 4. Session APIs
-
-Implemented in `app/routers/sessions.py`
-
-Available:
-
-- create session
-- list sessions
-- get session
-- soft delete session
-
-Session detail now supports returning richer backend context for later frontend use.
-
-### 5. Chat pipeline
-
-Implemented in `app/routers/chat.py`
-
-Current flow:
-
-- Accept text or voice input
-- STT for voice
-- language detection
-- translate to English using formal mode
-- category resolution
-- inject extracted document context
-- legal response generation
-- translate back to session language using modern-colloquial mode
-- generate TTS audio
-- save user and assistant messages
-
-### 6. Document pipeline
-
-Implemented in `app/routers/documents.py`
-
-Current flow:
-
-- validate file type
-- validate file size
-- save upload
-- create DB row with `pending`
-- trigger background processing
-- update to `processing`, then `completed` or `failed`
-- persist extracted text
-- create assistant info message
-
-New endpoint:
-
-- `GET /api/sessions/{id}/documents`
-
-### 7. Complaint generation
-
-Implemented in `app/routers/complaints.py`
-
-Available:
-
-- generate complaint PDF
-- fetch latest complaint for session
-
-PDF builder improved in `app/services/pdf_generator.py`
-
-### 8. Static file serving
-
-Implemented in `app/routers/files.py`
-
-Available:
-
-- `GET /static/audio/{file}`
-- `GET /static/complaints/{file}`
-- `GET /static/uploads/{file}`
-
-This is important because production storage may live on Render Disk instead of only local `static/`.
-
-### 9. Health check
-
-Implemented in `app/main.py`
-
-- `GET /health`
-
-### 10. Deployment
-
-Updated in `render.yaml`
-
-Includes:
-
-- backend rootDir
-- build with Alembic migration
-- PostgreSQL database definition
-- persistent Render Disk mount
-- storage env vars for `/data`
-
-## Current Production-Ready Areas
-
-These parts are now in much better shape for later frontend connection:
-
-- auth contract shape
-- refresh/logout token lifecycle
-- session CRUD
-- document status endpoint
-- complaint generation endpoint
-- stable file URLs
-- environment-driven storage
-- deploy config with persistent disk
-- DB migration for new metadata
-
-## Still Not Fully Complete
-
-The backend is stronger now, but these items are still pending before calling it fully production-complete.
-
-### 1. Real SMS OTP provider
-
-Current status:
-
-- OTP logic exists
-- OTP is mocked in backend memory
-
-Still needed:
-
-- MSG91 or Twilio integration
-- persistence or cache for OTPs
-- rate limiting
-- resend rules
-
-### 2. Real Sarvam Language ID
-
-Current status:
-
-- `sarvam_lid.py` exists as a stub/fallback
-
-Still needed:
-
-- actual API integration
-
-### 3. Real Sarvam-30B legal reasoning
-
-Current status:
-
-- `legal_ai.py` returns structured fallback guidance
-- agent classification and prompt scaffolding exists
-
-Still needed:
-
-- real Sarvam-30B chat completion integration
-- proper prompt assembly
-- category-specific system prompts passed into the model
-
-### 4. WebSocket live voice pipeline
-
-Current status:
-
-- REST chat endpoint works
-
-Still needed:
-
-- `/ws/voice`
-- PCM chunk streaming
-- real-time transcript / translation / response events
-
-### 5. Better guest restrictions
-
-Master prompt requirement:
-
-- guest mode should limit AI queries
-
-Current status:
-
-- guest token expiry exists
-- guest query limit setting exists
-
-Still needed:
-
-- actual enforcement of query count limit
-
-### 6. Helpline data APIs
-
-Current status:
-
-- `helplines` model exists
-
-Still needed:
-
-- endpoint to list helplines by category
-- optional seed data migration
-
-### 7. Tests
-
-Current status:
-
-- syntax verification done with `compileall`
-
-Still needed:
-
-- unit tests
-- endpoint tests
-- auth flow tests
-- document flow tests
-- complaint generation tests
-
-## Backend APIs Expected For Frontend Later
-
-These are the main endpoints your frontend can plan around:
-
-- `POST /api/auth/request-otp`
-- `POST /api/auth/verify-otp`
-- `POST /api/auth/refresh`
-- `POST /api/auth/logout`
-- `POST /api/auth/guest`
-- `POST /api/sessions`
-- `GET /api/sessions`
-- `GET /api/sessions/{id}`
-- `DELETE /api/sessions/{id}`
-- `POST /api/sessions/{id}/messages`
-- `POST /api/sessions/{id}/documents`
-- `GET /api/sessions/{id}/documents`
-- `POST /api/sessions/{id}/complaint`
-- `GET /api/sessions/{id}/complaint`
-- `GET /health`
-- `GET /static/audio/{file}`
-- `GET /static/complaints/{file}`
-- `GET /static/uploads/{file}`
-
-## Known Backend Bugs & Mismatches
-
-These verified issues inside `neethimitra-backend/` should be resolved to align with the master specification and prevent production errors:
-
-### Critical Bugs
-* **TTS Character Limit Truncation (`sarvam_tts.py`)**: Slices text at 2500 characters instead of 500. Since Bulbul v3 strictly rejects text beyond 500 characters, generating longer legal assistant responses will crash.
-* **Category Classifier Session Lock (`classifier.py`)**: `classify_category` returns the existing session category immediately if set, preventing active chats from being dynamically reclassified when topics shift.
-
-### Significant Bugs
-* **Auth Register/Login Mismatch (`auth.py`)**: Endpoint registration asks for email + password, and OAuth login expects email under the `username` field. This conflicts with the phone-first OTP authentication documented in the master specs.
-* **N+1 SQL Lazy-Loading in Session Lists (`schemas.py`)**: `SessionResponse` includes `messages: List[MessageResponse]` mapping. Fetching the list of sessions triggers lazy-loads for all historical messages, causing database bottlenecks.
-* **Depreciation & Timezone Mismatches (`session_support.py`)**: Naive UTC timestamp generator (`utcnow_naive`) conflicts with SQLAlchemy models using aware `datetime.now(timezone.utc)`.
-
-### Spec Mismatches
-* **Helplines Public Endpoint (`helplines.py`)**: Helpline API router exposes endpoints publicly without auth dependencies, whereas the specs require a JWT token.
-* **Static File Serve Downloads (`files.py`)**: Serving caches using `filename` properties forces attachments header downloads (`Content-Disposition: attachment`), preventing inline playback or viewing in standard browsers.
-* **Limited Complaints History (`complaints.py`)**: Only the latest complaint version is queryable; no endpoint lists older draft versions.
-
-## Recommended Next Backend Steps
-
-Priority order:
-
-1. Fix the critical TTS limit truncation (slice text at 500 characters).
-2. Allow classifier to dynamically reclassify active sessions instead of locking category.
-3. Switch register and login schema validation to enforce phone number format instead of email.
-4. Remove the N+1 lazy-load loop in SessionResponse lists by omitting deep messages lists in summaries.
-5. Fix naive/aware datetime differences.
-6. Serve audio/complaint responses without forcing file attachments in HTTP headers.
-7. Wire real Sarvam-30B legal response service.
-8. Add guest query-limit enforcement.
-9. Add WebSocket voice endpoint.
-10. Add helpline API and seed data.
-11. Add automated tests.
-12. Run full end-to-end local verification.
-
-## Verification Already Done
-
-Completed:
-
-- Python compile check for `app/`
-- Python compile check for `alembic/`
-
-Commands used:
-
-```powershell
-python -m compileall neethimitra-backend/app
-python -m compileall neethimitra-backend/alembic
+This file serves as the up-to-date, single source of truth for the `neethimitra-backend` service inside `D:\NeethiMithra AI`.
+It documents the current architecture, database schemas, active endpoints, processing pipelines, and development mock modes.
+
+---
+
+## Technical Stack
+- **Framework**: FastAPI (Python)
+- **Database**: PostgreSQL (SQLAlchemy ORM + Alembic migrations)
+- **CORS Configuration**: Handles web clients. Configured to explicitly match the Vercel production domain (`https://neethimitraai.vercel.app`), dynamic wildcard subdomains (`https://*.vercel.app`), and local development environments.
+- **Background Tasks**: Built-in FastAPI async background workers manage document OCR processing outside the HTTP request lifecycle.
+
+---
+
+## Database Models & Schema
+The database is structured into the following core tables (defined in `app/models.py`):
+
+1. **`users`**:
+   - Supports regular password accounts, Google OAuth accounts, and Anonymous guests.
+   - `is_anonymous` (Boolean) & `guest_queries_used` (Integer): Track guest state.
+   - `provider`: Authentication source (`"password"`, `"google"`, or `"guest"`).
+   - `preferred_language`: Session fallback language.
+   - Includes profile fields like `email`, `phone`, `profile_image`, and metadata (timestamps, last login).
+
+2. **`sessions`**:
+   - Tracks chat conversations grouped by category (e.g. Land & Property, Cyber Fraud).
+   - `category`: The current active category.
+   - `language_code`: Main language of this session.
+   - `is_active` / `status`: Activity and soft-deletion tracking.
+
+3. **`messages`**:
+   - Chat transcript logs.
+   - Stores `role` (`"user"` or `"assistant"`), `input_type` (`"text"` or `"voice"`), `text_content` (original text), and `english_translation` (used by AI reasoning).
+   - `audio_url`: Reference path to the generated TTS speech audio file.
+   - `category`: Category tag for the specific message.
+
+4. **`documents`**:
+   - User uploaded files (PDFs, Images) associated with a session.
+   - `analysis_status`: Extraction pipeline state (`"pending"`, `"processing"`, `"completed"`, or `"failed"`).
+   - `extracted_text` & `extracted_summary`: Markdown text returned by Sarvam Vision and its compiled summary.
+
+5. **`complaints`**:
+   - Generated legal complaint PDF history.
+   - `pdf_path`: Path to the generated PDF.
+   - `draft_text`: Compiled Markdown description.
+   - `version`: Tracks version iterations.
+
+6. **`helplines`**:
+   - National and regional support helpline catalog. Includes `category`, `number`, `priority`, and location filters.
+
+7. **`refresh_tokens`**, **`auth_sessions`** & **`session_events`**:
+   - Analytic logging, token rotation tracks, and security auditing.
+
+---
+
+## Authentication Architecture (`/api/auth`)
+The authentication layer relies on JWT Access and Refresh tokens (defined in `app/routers/auth.py`).
+
+- **Registration & Login**:
+  - `POST /api/auth/register`: Signup using name, email, and password.
+  - `POST /api/auth/login`: Signin using email/password (returns Access & Refresh JWT).
+- **Google OAuth Login**:
+  - `POST /api/auth/google`: Accepts a Google ID token. In production, this uses Google's API Client to verify authenticity. In development (when `GOOGLE_CLIENT_ID` is unset), it accepts `mock_google_` tokens for testing bypass.
+- **Guest Lifecycle**:
+  - `POST /api/auth/guest`: Spawns a temporary anonymous account. Returns a standard JWT.
+  - **Query Enforcement**: Guest requests are restricted to a configurable threshold (default: 3 queries). Attempting queries beyond this returns a `403 Forbidden` response.
+  - `POST /api/auth/guest/upgrade`: Allows a guest to link an email and password, converting their account to a permanent registered status without losing their session history.
+- **Token Maintenance**:
+  - `POST /api/auth/refresh`: Performs refresh token rotation.
+  - `POST /api/auth/logout`: Revokes refresh tokens and marks active auth sessions as inactive.
+- **User Account**:
+  - `GET /api/auth/me`: Fetches profile details.
+  - `PATCH /api/auth/me`: Updates name and preferred language.
+  - `PATCH /api/auth/me/avatar`: Updates profile picture URL.
+  - `DELETE /api/auth/me`: Permanently deletes the account and all cascading data.
+
+---
+
+## Core API Pipelines
+
+### 1. Chat & Translation Pipeline (`app/routers/chat.py`)
+Triggered via `POST /api/sessions/{session_id}/messages` (for text) or `POST /api/sessions/{session_id}/voice` (for audio files).
+
+```mermaid
+graph TD
+    User([User Input]) --> InputType{Input Type?}
+    InputType -- Voice file --> STT[Sarvam STT transcription]
+    InputType -- Text --> LID[Sarvam Language ID check]
+    STT --> TransText[Transcribed Text]
+    LID --> TransText
+    TransText --> EnglishTrans[Translate to English - Formal]
+    EnglishTrans --> CategoryResolver[Keyword/Classifier check]
+    CategoryResolver --> Context[Fetch & inject Session Documents context]
+    Context --> LegalAI[Sarvam LLM Legal Reasoning]
+    LegalAI --> EnglishResponse[English Legal Advice]
+    EnglishResponse --> RegionalTrans[Translate response back to native language]
+    RegionalTrans --> OutputMode{Voice input?}
+    OutputMode -- Yes --> TTS[Sarvam TTS synthesis - Bulbul v3]
+    OutputMode -- No --> SaveDB[Save user/assistant messages to DB]
+    TTS --> SaveDB
+    SaveDB --> Response[Return JSON text, translations, & audio URL]
 ```
 
-## Working Summary
+- **Transcription & Translation**: User speech is transcribed via Sarvam STT. Both text and speech queries are translated to English via Sarvam Translate (`mode="formal"`) for the AI model, and responses are translated back (`mode="colloquial"`) to preserve readability.
+- **Document Context Injection**: Prioritized by timestamp, any parsed documents (`analysis_status="completed"`) are concatenated and injected into the legal AI prompt context.
+- **Dynamic Category Reclassification**: The session category is reclassified dynamically using keyword metrics in `app/agent/classifier.py`. If a user shifts from a Land issue to a Cyber Fraud issue, the category is automatically reclassified.
+- **TTS Synthesis**: For voice queries, the assistant response is synthesized to audio using Sarvam TTS.
 
-The backend is now in a good intermediate state:
+### 2. Document OCR Pipeline (`app/routers/documents.py`)
+- **Upload**: `POST /api/sessions/{session_id}/documents` accepts PDFs and Images (PNG, JPG, JPEG) up to 10MB.
+- **Background Extraction**: Saves the file locally and spawns a background worker (`_process_document_async`).
+- **Processing**: The worker calls Sarvam Vision to parse markdown formatting from the file. It updates `analysis_status` to `"completed"` or `"failed"` and compiles an automatic summary.
+- **System Notification**: Injects a helper assistant message into the chat thread confirming successful document ingestion.
 
-- better structured
-- more frontend-ready
-- safer for deployment
-- closer to the master prompt architecture
+### 3. Complaint PDF Generation (`app/routers/complaints.py`)
+- **Generate**: `POST /api/sessions/{session_id}/complaint`
+- **Logic**: Compiles the session's user inputs and processed document text into a structured, formal PDF complaint document. It increments version counters in the database.
+- **Fetch**: `GET /api/sessions/{session_id}/complaint` retrieves the latest generated complaint draft.
 
-It is not yet fully final-production complete, but it is now a much stronger foundation for frontend integration after the UI is finished.
+### 4. Helplines Catalog (`app/routers/helplines.py`)
+- `GET /api/helplines`: Returns categorized helplines (Land, Cyber, DV) sorted by priority and location filters.
+
+---
+
+## Static File Serving & Download Security (`app/routers/files.py`)
+All file repositories are securely served via FastAPI custom router endpoints:
+1. **Audio Cache (`/static/audio/{file}`)**: Publicly accessible. Uses unique UUID file naming to prevent enumeration. Serves responses with `Content-Disposition: inline` for direct player playback.
+2. **Uploaded Documents (`/static/uploads/{file}`)**: Enforces JWT authorization. Only the owner of the document can fetch it.
+3. **Generated PDF Complaints (`/static/complaints/{file}`)**: Enforces JWT authorization. Prevents unauthorized downloads.
+
+---
+
+## Development Mock / Fallback Mode
+To facilitate easy local development, testing, and Vercel demos without active API billing, the backend implements a **transparent mock mode** when `SARVAM_API_KEY` is not present (or when network calls fail):
+
+*   **LID & Translate**: Returns text as-is (acts as a bypass).
+*   **Speech-to-Text**: Returns fallback mock transcription.
+*   **Text-to-Speech**: Writes a valid silent WAV file (`mono 16-bit PCM, 22.05kHz`) to prevent frontend audio player crashes.
+*   **Vision OCR**: Generates mock Markdown tables and dummy legal details.
+*   **Legal AI**: Resolves categories and returns beautiful, pre-written structured markdown legal advice, including matching IPC/BNS acts and next-step actions.
+*   **Google OAuth**: Accepts mock ID tokens (`mock_google_{email}_{name}`) and parses them into fake profiles for dev sign-ins.

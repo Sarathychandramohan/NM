@@ -99,7 +99,7 @@ async def _process_document_async(
                 text_content=(
                     f"Document '{original_filename}' processed successfully."
                     if db_doc.analysis_status == "completed"
-                    else f"Document '{original_filename}' was uploaded but could not be analysed automatically."
+                    else f"Document '{original_filename}' was uploaded, but I couldn't read this document."
                 ),
                 original_language=session_language,
                 input_type="text",

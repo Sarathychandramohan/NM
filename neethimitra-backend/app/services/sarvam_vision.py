@@ -47,17 +47,19 @@ async def _get_upload_url(client: httpx.AsyncClient, job_id: str, filename: str,
 
     # Defensively support both dictionary maps and list structures
     if isinstance(upload_urls, dict):
-        url = upload_urls.get(filename) or next(iter(upload_urls.values()), None)
+        entry = upload_urls.get(filename) or next(iter(upload_urls.values()), None)
     elif isinstance(upload_urls, list) and len(upload_urls) > 0:
-        if isinstance(upload_urls[0], dict):
-            url = upload_urls[0].get("url")
-        else:
-            url = upload_urls[0]
+        entry = upload_urls[0]
     else:
-        url = None
+        entry = None
+
+    if isinstance(entry, dict):
+        url = entry.get("file_url") or entry.get("url")
+    else:
+        url = entry
 
     if not url:
-        raise RuntimeError(f"Sarvam Vision: Could not extract upload URL for file '{filename}' from response.")
+        raise RuntimeError(f"Sarvam Vision: Could not extract upload URL for file '{filename}' from response. Response data: {response.json()}")
     return url
 
 

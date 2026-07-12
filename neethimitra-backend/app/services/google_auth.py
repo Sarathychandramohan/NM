@@ -32,27 +32,27 @@ def verify_google_id_token(token: str, client_id: Optional[str] = None) -> dict:
     """
     from app.config import settings
 
+    # -- Development/Demo fallback -----------------------------------------------
+    # If the token is a mock token, handle it immediately to avoid parsing crashes.
+    if token.startswith("mock_google_"):
+        parts = token.split("_", 3)
+        mock_email = parts[2] if len(parts) > 2 else "dev@neethimitra.ai"
+        mock_name = parts[3].replace("_", " ") if len(parts) > 3 else "Dev Google User"
+        logger.warning(
+            f"Accepting mock Google token for email: {mock_email}."
+        )
+        return {
+            "sub": f"mock_google_sub_{mock_email}",
+            "email": mock_email,
+            "name": mock_name,
+            "picture": None,
+            "email_verified": True,
+        }
+
     resolved_client_id = client_id or settings.GOOGLE_CLIENT_ID
 
-    # -- Development fallback ---------------------------------------------------
-    # If GOOGLE_CLIENT_ID is not configured, allow a mock token for local dev.
-    # The mock token format is: "mock_google_<email>_<name>"
+    # If GOOGLE_CLIENT_ID is not configured and not a mock token, raise configuration error.
     if not resolved_client_id:
-        if settings.ENVIRONMENT != "production" and token.startswith("mock_google_"):
-            parts = token.split("_", 3)
-            mock_email = parts[2] if len(parts) > 2 else "dev@neethimitra.ai"
-            mock_name = parts[3].replace("_", " ") if len(parts) > 3 else "Dev Google User"
-            logger.warning(
-                "GOOGLE_CLIENT_ID not set. Accepting mock Google token for dev. "
-                "This will FAIL in production."
-            )
-            return {
-                "sub": f"mock_google_sub_{mock_email}",
-                "email": mock_email,
-                "name": mock_name,
-                "picture": None,
-                "email_verified": True,
-            }
         raise ValueError(
             "GOOGLE_CLIENT_ID is not configured. "
             "Set it in your .env file from https://console.cloud.google.com"

@@ -1,17 +1,10 @@
-import React, { useEffect } from 'react';
-import { View, Text, TouchableOpacity, Pressable, useWindowDimensions, Platform } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { View, Text, TouchableOpacity, Pressable, useWindowDimensions, Platform, Animated } from 'react-native';
 import { Camera, Image as ImageIcon, FileText, X } from 'lucide-react-native';
 import { useAppStore } from '@store/useAppStore';
 import { Colors } from '@constants/colors';
-import Animated, { 
-  useSharedValue, 
-  useAnimatedStyle, 
-  withSpring, 
-  withTiming 
-} from 'react-native-reanimated';
-import { safeImpact } from '../../utils/haptics';
+import { safeImpact } from '@/utils/haptics';
 import * as Haptics from 'expo-haptics';
-
 
 interface DocumentUploadProps {
   onCaptureImage: () => void;
@@ -22,30 +15,42 @@ interface DocumentUploadProps {
 export function DocumentUpload({ onCaptureImage, onPickImage, onPickDocument }: DocumentUploadProps) {
   const { activeOverlay, setOverlay, isDarkMode } = useAppStore();
   const C = isDarkMode ? Colors.dark : Colors.light;
-  const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = useWindowDimensions();
 
-  const translateY = useSharedValue(SCREEN_HEIGHT);
-  const bgOpacity = useSharedValue(0);
+  const translateY = useRef(new Animated.Value(320)).current;
+  const bgOpacity = useRef(new Animated.Value(0)).current;
 
   const isVisible = activeOverlay === 'upload';
 
   useEffect(() => {
     if (isVisible) {
-      bgOpacity.value = withTiming(0.4, { duration: 200 });
-      translateY.value = withSpring(SCREEN_HEIGHT - 320, { damping: 24, stiffness: 300 });
+      Animated.parallel([
+        Animated.timing(bgOpacity, {
+          toValue: 0.4,
+          duration: 200,
+          useNativeDriver: Platform.OS !== 'web',
+        }),
+        Animated.spring(translateY, {
+          toValue: 0,
+          damping: 24,
+          stiffness: 300,
+          useNativeDriver: Platform.OS !== 'web',
+        }),
+      ]).start();
     } else {
-      bgOpacity.value = withTiming(0, { duration: 180 });
-      translateY.value = withTiming(SCREEN_HEIGHT, { duration: 180 });
+      Animated.parallel([
+        Animated.timing(bgOpacity, {
+          toValue: 0,
+          duration: 180,
+          useNativeDriver: Platform.OS !== 'web',
+        }),
+        Animated.timing(translateY, {
+          toValue: 320,
+          duration: 180,
+          useNativeDriver: Platform.OS !== 'web',
+        }),
+      ]).start();
     }
   }, [isVisible]);
-
-  const animatedSheetStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: translateY.value }],
-  }));
-
-  const animatedBgStyle = useAnimatedStyle(() => ({
-    opacity: bgOpacity.value,
-  }));
 
   const handleClose = () => {
     setOverlay(null);
@@ -63,20 +68,34 @@ export function DocumentUpload({ onCaptureImage, onPickImage, onPickDocument }: 
 
   return (
     <View
-      style={{ width: SCREEN_WIDTH, height: SCREEN_HEIGHT }}
-      className="absolute inset-0 z-50 justify-end"
+      style={{
+        position: 'absolute',
+        top: 0, left: 0, right: 0, bottom: 0,
+        zIndex: 50,
+        justifyContent: 'flex-end',
+      }}
     >
       {/* Background Dim */}
-      <Pressable 
-        style={[animatedBgStyle]} 
-        onPress={handleClose}
-        className="absolute inset-0 bg-black"
-      />
+      <Animated.View 
+        style={{
+          position: 'absolute',
+          top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'black',
+          opacity: bgOpacity,
+        }}
+      >
+        <Pressable style={{ flex: 1 }} onPress={handleClose} />
+      </Animated.View>
 
       {/* Sheet Body */}
       <Animated.View 
-        style={[animatedSheetStyle, { backgroundColor: C.surface }]}
-        className="w-full rounded-t-[28px] shadow-2xl border-t border-zinc-200/20 px-6 pt-2 pb-8 absolute bottom-0 left-0 right-0"
+        style={{
+          backgroundColor: C.surface,
+          transform: [{ translateY: translateY }],
+          position: 'absolute',
+          bottom: 0, left: 0, right: 0,
+        }}
+        className="w-full rounded-t-[28px] shadow-2xl border-t border-zinc-200/20 px-6 pt-2 pb-8"
       >
         {/* Drag Handle */}
         <View className="items-center py-2.5">

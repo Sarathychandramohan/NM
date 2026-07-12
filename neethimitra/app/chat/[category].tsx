@@ -266,7 +266,7 @@ export default function ChatScreen() {
     generateMessageAudio, authToken,
   } = useAppStore();
 
-  const player = useAudioPlayer(null);
+  const player = Platform.OS !== 'web' ? useAudioPlayer(null) : null;
   const C = isDarkMode ? Colors.dark : Colors.light;
   const t = UI_TRANSLATIONS[selectedLanguage.code] || UI_TRANSLATIONS['en-IN'];
   const scale = getTextScale(textSize);
@@ -278,27 +278,39 @@ export default function ChatScreen() {
   const isWeb = Platform.OS === 'web';
   const typingDots = useRef(new Animated.Value(0)).current;
 
-  const pdfBannerY = useSharedValue(120);
+  // Standard Animated values to bypass Reanimated web crashes
+  const pdfBannerY = useRef(new Animated.Value(120)).current;
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
 
-  const pulseScale = useSharedValue(1.0);
-  const pulseOpacity = useSharedValue(0.5);
+  const pulseScale = useRef(new Animated.Value(1.0)).current;
+  const pulseOpacity = useRef(new Animated.Value(0.5)).current;
 
   useEffect(() => {
-    pulseScale.value = withRepeat(
-      withTiming(1.65, { duration: 1400, easing: Easing.out(Easing.ease) }),
-      -1, false
-    );
-    pulseOpacity.value = withRepeat(
-      withTiming(0, { duration: 1400, easing: Easing.out(Easing.ease) }),
-      -1, false
-    );
+    let anim: Animated.CompositeAnimation | null = null;
+    const animatePulse = () => {
+      pulseScale.setValue(1.0);
+      pulseOpacity.setValue(0.5);
+      anim = Animated.parallel([
+        Animated.timing(pulseScale, {
+          toValue: 1.65,
+          duration: 1400,
+          useNativeDriver: Platform.OS !== 'web',
+        }),
+        Animated.timing(pulseOpacity, {
+          toValue: 0.0,
+          duration: 1400,
+          useNativeDriver: Platform.OS !== 'web',
+        }),
+      ]);
+      anim.start(() => {
+        animatePulse();
+      });
+    };
+    animatePulse();
+    return () => {
+      if (anim) anim.stop();
+    };
   }, []);
-
-  const pulseRingStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: pulseScale.value }],
-    opacity: pulseOpacity.value,
-  }));
 
   const category   = CATEGORIES.find((c) => c.id === (categoryParam || activeSession?.categoryId)) || CATEGORIES[0];
   const iconInfo   = CATEGORY_ICONS[category.id] ?? { Icon: Scale, color: Colors.orange };
@@ -344,7 +356,20 @@ export default function ChatScreen() {
 
   // PDF banner spring
   useEffect(() => {
-    pdfBannerY.value = pdfUrl ? withSpring(0, { damping: 18, stiffness: 200 }) : 120;
+    if (pdfUrl) {
+      Animated.spring(pdfBannerY, {
+        toValue: 0,
+        damping: 18,
+        stiffness: 200,
+        useNativeDriver: Platform.OS !== 'web',
+      }).start();
+    } else {
+      Animated.timing(pdfBannerY, {
+        toValue: 120,
+        duration: 180,
+        useNativeDriver: Platform.OS !== 'web',
+      }).start();
+    }
   }, [pdfUrl]);
 
   const sendMessage = async (text: string, isVoice = false) => {
@@ -393,8 +418,8 @@ export default function ChatScreen() {
         const a = new (window as any).Audio(targetUri);
         a.play();
       } else {
-        player.replace(targetUri);
-        player.play();
+        player?.replace(targetUri);
+        player?.play();
       }
     } catch { /* silent */ }
   };
@@ -510,9 +535,7 @@ export default function ChatScreen() {
     );
   }, [isDarkMode, C, scale, t, loadingAudioId]);
 
-  const pdfBannerAnim = useAnimatedStyle(() => ({
-    transform: [{ translateY: pdfBannerY.value }],
-  }));
+
 
   const chatContent = (
     <SafeAreaView style={[styles.container, { backgroundColor: C.background }]} edges={isWeb ? ['bottom'] : ['bottom', 'top']}>
@@ -667,7 +690,7 @@ export default function ChatScreen() {
 
         {/* ── PDF banner ───────────────────────────────────────────────── */}
         {pdfUrl && (
-          <AnimatedR.View style={[styles.pdfBanner, pdfBannerAnim]}>
+          <Animated.View style={[styles.pdfBanner, { transform: [{ translateY: pdfBannerY }] }]}>
             <CheckCircle size={18} color="#FFFFFF" strokeWidth={2} />
             <View style={{ flex: 1 }}>
               <Text style={[styles.pdfTitle, { fontSize: 13 * scale }]}>{t.pdfReady}</Text>
@@ -679,7 +702,7 @@ export default function ChatScreen() {
             >
               <Text style={[styles.pdfBtnText, { fontSize: 12 * scale }]}>{t.open}</Text>
             </TouchableOpacity>
-          </AnimatedR.View>
+          </Animated.View>
         )}
 
         {/* ── Input bar ────────────────────────────────────────────────── */}
@@ -738,10 +761,11 @@ export default function ChatScreen() {
             </TouchableOpacity>
           ) : (
             <View style={{ width: 44, height: 44, position: 'relative', alignItems: 'center', justifyContent: 'center' }}>
-              <AnimatedR.View
+              <Animated.View
                 style={[
-                  pulseRingStyle,
                   {
+                    transform: [{ scale: pulseScale }],
+                    opacity: pulseOpacity,
                     position: 'absolute',
                     width: 44,
                     height: 44,

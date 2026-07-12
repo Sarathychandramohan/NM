@@ -22,6 +22,7 @@ import {
 } from '@expo-google-fonts/noto-sans';
 import * as SplashScreen from 'expo-splash-screen';
 import { configureReanimatedLogger, ReanimatedLogLevel } from 'react-native-reanimated';
+import ErrorBoundary from '@/components/ui/ErrorBoundary';
 
 // Custom Overlays mounted globally
 import { RecordingOverlay } from '@/components/overlays/RecordingOverlay';
@@ -77,26 +78,28 @@ export default function RootLayout() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <ThemeProvider>
-        <SafeAreaProvider>
-          <StatusBar style={isDarkMode ? 'light' : 'dark'} translucent />
-          
-          <Stack screenOptions={{ headerShown: false }}>
-            <Stack.Screen name="(auth)" />
-            <Stack.Screen name="(tabs)" />
-            <Stack.Screen name="chat/[category]" />
-          </Stack>
+      <ErrorBoundary>
+        <ThemeProvider>
+          <SafeAreaProvider>
+            <StatusBar style={isDarkMode ? 'light' : 'dark'} translucent />
+            
+            <Stack screenOptions={{ headerShown: false }}>
+              <Stack.Screen name="(auth)" />
+              <Stack.Screen name="(tabs)" />
+              <Stack.Screen name="chat/[category]" />
+            </Stack>
 
-          {/* Global overlays — mounted here so setOverlay() works from any screen */}
-          <RecordingOverlay />
-          <LanguagePicker />
-          <ErrorSheet />
-          <SuccessSheet />
-          <Sidebar />
-          <LoginPromptModal />
-          <SignOutConfirmModal />
-        </SafeAreaProvider>
-      </ThemeProvider>
+            {/* Global overlays — mounted here so setOverlay() works from any screen */}
+            <RecordingOverlay />
+            <LanguagePicker />
+            <ErrorSheet />
+            <SuccessSheet />
+            <Sidebar />
+            <LoginPromptModal />
+            <SignOutConfirmModal />
+          </SafeAreaProvider>
+        </ThemeProvider>
+      </ErrorBoundary>
     </GestureHandlerRootView>
   );
 }

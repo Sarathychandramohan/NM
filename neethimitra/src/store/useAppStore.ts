@@ -716,6 +716,7 @@ export const useAppStore = create<AppState>()(
               d.id === newDoc.id ? { ...d, status: 'failed' } : d
             ),
           }));
+          throw err;
         }
       },
 

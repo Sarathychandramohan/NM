@@ -149,7 +149,7 @@ export default function PhoneAuthScreen() {
   );
 
   // ── Form Card (shared between mobile and web right panel) ─────────────────
-  const FormCard = () => (
+  const renderFormCard = () => (
     <View style={[styles.formCard, isDesktop && styles.formCardDesktop, { backgroundColor: isDarkMode ? '#111' : '#fff' }]}>
       {/* Back and Language top bar */}
       <View style={styles.formHeader}>
@@ -390,7 +390,7 @@ export default function PhoneAuthScreen() {
           contentContainerStyle={styles.desktopRightContent}
           showsVerticalScrollIndicator={false}
         >
-          <FormCard />
+          {renderFormCard()}
         </ScrollView>
       </View>
     );
@@ -409,7 +409,7 @@ export default function PhoneAuthScreen() {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          <FormCard />
+          {renderFormCard()}
         </ScrollView>
         <View style={[styles.disclaimer, { borderTopColor: C.surfaceBorder }]}>
           <Text style={[styles.disclaimerText, { color: C.textHint }]}>

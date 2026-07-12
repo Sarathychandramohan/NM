@@ -46,6 +46,10 @@ else:
     if not settings.DATABASE_URL:
         settings.DATABASE_URL = "sqlite:///./neethimitra.db"
 
+# Convert postgres:// to postgresql:// for SQLAlchemy 1.4/2.0+ compatibility
+if settings.DATABASE_URL and settings.DATABASE_URL.startswith("postgres://"):
+    settings.DATABASE_URL = settings.DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
 def _resolve_storage_path(path_value: str) -> str:
     """
     Resolve a possibly relative storage path to an absolute path anchored

@@ -81,9 +81,9 @@ async def _upload_file_to_url(client: httpx.AsyncClient, presigned_url: str, fil
 async def _start_job(client: httpx.AsyncClient, job_id: str) -> None:
     """Step 4: Trigger processing of the uploaded file."""
     response = await client.post(
-        f"{SARVAM_BASE}/doc-digitization/job/v1/start",
+        f"{SARVAM_BASE}/doc-digitization/job/v1/{job_id}/start",
         headers=_headers(),
-        json={"job_id": job_id, "output_format": "markdown"},
+        json={"output_format": "md"},
         timeout=15.0,
     )
     response.raise_for_status()
@@ -94,9 +94,8 @@ async def _poll_status(client: httpx.AsyncClient, job_id: str) -> list[str]:
     for attempt in range(MAX_POLL_ATTEMPTS):
         await asyncio.sleep(POLL_INTERVAL_SECONDS)
         response = await client.get(
-            f"{SARVAM_BASE}/doc-digitization/job/v1/status",
+            f"{SARVAM_BASE}/doc-digitization/job/v1/{job_id}/status",
             headers=_headers(),
-            params={"job_id": job_id},
             timeout=15.0,
         )
         response.raise_for_status()
@@ -116,16 +115,32 @@ async def _poll_status(client: httpx.AsyncClient, job_id: str) -> list[str]:
 async def _get_download_url(client: httpx.AsyncClient, job_id: str, output_filename: str) -> str:
     """Step 6: Get pre-signed download URL for the result Markdown file."""
     response = await client.post(
-        f"{SARVAM_BASE}/doc-digitization/job/v1/download-files",
+        f"{SARVAM_BASE}/doc-digitization/job/v1/{job_id}/download-files",
         headers=_headers(),
         json={"job_id": job_id, "files": [output_filename]},
         timeout=15.0,
     )
     response.raise_for_status()
-    download_urls = response.json().get("download_urls", [])
+    download_urls = response.json().get("download_urls")
     if not download_urls:
-        raise RuntimeError("Sarvam Vision: No download URL returned by the API.")
-    return download_urls[0]["url"]
+        raise RuntimeError(f"Sarvam Vision: No download URL returned by the API. Response: {response.json()}")
+
+    # Defensively support both dictionary maps and list structures
+    if isinstance(download_urls, dict):
+        entry = download_urls.get(output_filename) or next(iter(download_urls.values()), None)
+    elif isinstance(download_urls, list) and len(download_urls) > 0:
+        entry = download_urls[0]
+    else:
+        entry = None
+
+    if isinstance(entry, dict):
+        url = entry.get("file_url") or entry.get("url")
+    else:
+        url = entry
+
+    if not url:
+        raise RuntimeError(f"Sarvam Vision: Could not extract download URL for file '{output_filename}' from response. Response data: {response.json()}")
+    return url
 
 
 async def _download_markdown(client: httpx.AsyncClient, download_url: str) -> str:

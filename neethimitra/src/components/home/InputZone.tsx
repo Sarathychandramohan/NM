@@ -64,9 +64,11 @@ export function InputZone() {
     setInputText('');
   };
 
-  const handleAttachPress = () => {
+  const handleAttachPress = async () => {
     safeImpact(Haptics.ImpactFeedbackStyle.Light);
+    await startSession({ id: 'general', label: 'General Legal Query', emoji: '💬', description: '', colorKey: 'general' });
     setOverlay('upload');
+    router.push('/chat/general' as any);
   };
 
   return (

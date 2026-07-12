@@ -37,15 +37,28 @@ async def _get_upload_url(client: httpx.AsyncClient, job_id: str, filename: str,
     response = await client.post(
         f"{SARVAM_BASE}/doc-digitization/job/v1/upload-files",
         headers=_headers(),
-        json={"job_id": job_id, "files": [{"file_name": filename, "file_type": file_type}]},
+        json={"job_id": job_id, "files": [filename]},
         timeout=15.0,
     )
     response.raise_for_status()
-    upload_urls = response.json().get("upload_urls", [])
+    upload_urls = response.json().get("upload_urls")
     if not upload_urls:
-        # RuntimeError — not HTTPException — because this runs in a background task
         raise RuntimeError("Sarvam Vision: No upload URL returned by the API.")
-    return upload_urls[0]["url"]
+
+    # Defensively support both dictionary maps and list structures
+    if isinstance(upload_urls, dict):
+        url = upload_urls.get(filename) or next(iter(upload_urls.values()), None)
+    elif isinstance(upload_urls, list) and len(upload_urls) > 0:
+        if isinstance(upload_urls[0], dict):
+            url = upload_urls[0].get("url")
+        else:
+            url = upload_urls[0]
+    else:
+        url = None
+
+    if not url:
+        raise RuntimeError(f"Sarvam Vision: Could not extract upload URL for file '{filename}' from response.")
+    return url
 
 
 async def _upload_file_to_url(client: httpx.AsyncClient, presigned_url: str, file_bytes: bytes, mime_type: str) -> None:

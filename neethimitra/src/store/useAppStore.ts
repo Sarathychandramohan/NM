@@ -33,13 +33,39 @@ export const CATEGORIES: Category[] = [
 // Maps backend category strings back to CATEGORIES ids robustly
 export function categoryIdFromLabel(backendCategory: string): string {
   const lower = backendCategory.toLowerCase().replace(/[^a-z]/g, '');
+  // Explicit backend-key → frontend-id mappings
+  const backendToFrontend: Record<string, string> = {
+    cybercrime: 'cyber',
+    womensdv: 'family',
+    womendv: 'family',
+    consumer: 'general',
+    labor: 'general',
+    senior: 'general',
+    complaint: 'general',
+    police: 'police',
+    health: 'health',
+    land: 'land',
+    rti: 'rti',
+  };
+  if (backendToFrontend[lower]) return backendToFrontend[lower];
   const match = CATEGORIES.find((c) => {
     const cLower = c.id.toLowerCase();
     const labelLower = c.label.toLowerCase().replace(/[^a-z]/g, '');
     return lower.startsWith(cLower) || lower === labelLower;
   });
-  return match?.id ?? CATEGORIES[0].id;
+  return match?.id ?? 'general';
 }
+
+// Maps frontend category IDs → backend category keys
+export const FRONTEND_TO_BACKEND_CATEGORY: Record<string, string> = {
+  land:    'land',
+  police:  'police',
+  cyber:   'cybercrime',
+  health:  'health',
+  family:  'women_dv',
+  rti:     'rti',
+  general: 'consumer',
+};
 
 export function getTextScale(textSize: 'small' | 'medium' | 'large'): number {
   if (textSize === 'small') return 0.85;
@@ -132,6 +158,7 @@ interface AppState {
   clearActiveSession: () => void;
   loadSession: (sessionId: string) => Promise<void>;
   deleteSession: (sessionId: string) => Promise<void>;
+  updateSessionCategory: (sessionId: string, categoryId: string) => Promise<void>;
   generateMessageAudio: (messageId: string) => Promise<string | undefined>;
 
   // PDF Generation
@@ -249,8 +276,8 @@ export const useAppStore = create<AppState>()(
             headers: authHeaders(authToken),
             body: JSON.stringify({
               title: category.label,
-              category: category.id,
-              // BUG-F017 partial fix: send real selected language
+              // Send backend key, not frontend ID
+              category: FRONTEND_TO_BACKEND_CATEGORY[category.id] ?? category.id,
               language_code: selectedLanguage.code,
             }),
           });
@@ -370,6 +397,34 @@ export const useAppStore = create<AppState>()(
         }
       },
 
+      updateSessionCategory: async (sessionId, categoryId) => {
+        const { authToken } = get();
+        const backendCategory = FRONTEND_TO_BACKEND_CATEGORY[categoryId] ?? categoryId;
+        // Optimistic UI update
+        set((s) => {
+          const cat = CATEGORIES.find((c) => c.id === categoryId);
+          const label = cat?.label ?? categoryId;
+          const updateSess = (sess: Session) =>
+            sess.id === sessionId ? { ...sess, categoryId, categoryLabel: label } : sess;
+          return {
+            sessions: s.sessions.map(updateSess),
+            activeSession: s.activeSession?.id === sessionId
+              ? updateSess(s.activeSession)
+              : s.activeSession,
+          };
+        });
+        if (!authToken) return;
+        try {
+          await apiClient(`/api/sessions/${sessionId}/category`, {
+            method: 'PATCH',
+            headers: authHeaders(authToken),
+            body: JSON.stringify({ category: backendCategory }),
+          });
+        } catch (err) {
+          console.warn('updateSessionCategory: failed:', safeLogVal(err));
+        }
+      },
+
       sendMessageToBackend: async (text, isVoice = false) => {
         const { activeSession, authToken } = get();
         if (!activeSession) return;
@@ -424,7 +479,20 @@ export const useAppStore = create<AppState>()(
             set((s) => {
               if (!s.activeSession) return s;
               const filtered = s.activeSession.messages.filter((m) => m.id !== userMsg.id);
-              const updated = { ...s.activeSession, messages: [...filtered, realUserMsg, aiMsg] };
+              // Sync auto-detected category from backend response
+              const detectedBackendCategory = data.assistant_message.category as string | undefined;
+              const newCategoryId = detectedBackendCategory
+                ? categoryIdFromLabel(detectedBackendCategory)
+                : s.activeSession.categoryId;
+              const newCategoryLabel = detectedBackendCategory
+                ? (CATEGORIES.find((c) => c.id === newCategoryId)?.label ?? s.activeSession.categoryLabel)
+                : s.activeSession.categoryLabel;
+              const updated = {
+                ...s.activeSession,
+                messages: [...filtered, realUserMsg, aiMsg],
+                categoryId: newCategoryId,
+                categoryLabel: newCategoryLabel,
+              };
               return {
                 activeSession: updated,
                 sessions: s.sessions.map((sess) => sess.id === updated.id ? updated : sess),

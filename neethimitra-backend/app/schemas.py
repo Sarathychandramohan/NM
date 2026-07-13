@@ -201,6 +201,7 @@ class SessionEventResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 class SessionDetailResponse(SessionResponse):
+    messages: List[MessageResponse] = []
     documents: List[DocumentResponse] = []
     complaints: List[ComplaintResponse] = []
     events: List[SessionEventResponse] = []

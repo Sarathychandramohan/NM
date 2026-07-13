@@ -2,6 +2,7 @@ import uuid
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.orm import Session as DBSession
 
 from app.core.dependencies import get_current_user
@@ -11,6 +12,16 @@ from app.schemas import SessionCreate, SessionDetailResponse, SessionResponse
 from app.services.session_support import build_session_event, mark_session_active
 
 router = APIRouter(prefix="/api/sessions", tags=["sessions"])
+
+# Valid category keys (must match agent/classifier.py KEYWORD_MAP keys + complaint)
+_VALID_CATEGORIES = {
+    "consumer", "cybercrime", "land", "labor",
+    "women_dv", "senior", "police", "health", "rti", "complaint",
+}
+
+
+class CategoryUpdateRequest(BaseModel):
+    category: str
 
 
 @router.post("", response_model=SessionResponse)
@@ -102,3 +113,39 @@ def delete_session(
         )
     )
     db.commit()
+
+
+@router.patch("/{session_id}/category", response_model=SessionResponse)
+def update_category(
+    session_id: str,
+    payload: CategoryUpdateRequest,
+    db: DBSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Manual category override by the user. Sets confidence to 1.0."""
+    if payload.category not in _VALID_CATEGORIES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown category '{payload.category}'. "
+                   f"Valid: {sorted(_VALID_CATEGORIES)}",
+        )
+    db_session = (
+        db.query(SessionModel)
+        .filter(SessionModel.id == session_id, SessionModel.user_id == current_user.id)
+        .first()
+    )
+    if not db_session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    db_session.category = payload.category
+    db.add(
+        build_session_event(
+            session_id=session_id,
+            user_id=current_user.id,
+            event_type="category_updated",
+            payload={"category": payload.category, "source": "user_override"},
+        )
+    )
+    db.commit()
+    db.refresh(db_session)
+    return db_session

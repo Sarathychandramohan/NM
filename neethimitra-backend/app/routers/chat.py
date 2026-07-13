@@ -99,6 +99,35 @@ async def _process_and_respond(
     if extracted_context:
         logger.info("Document context injected — %d chars", len(extracted_context))
 
+    # Build conversation history (last 5 pairs) for LLM context.
+    # We use english_translation so the LLM always works in English.
+    # For user messages we fall back to text_content if no translation stored.
+    prior_messages = (
+        db.query(Message)
+        .filter(Message.session_id == session_id)
+        .order_by(Message.created_at.desc())
+        .limit(10)   # 5 user + 5 assistant
+        .all()
+    )
+    # Reverse so oldest comes first (chronological order for the LLM)
+    prior_messages = list(reversed(prior_messages))
+    conversation_history = [
+        {
+            "role": msg.role,
+            "content": (
+                (msg.english_translation or msg.text_content or "").strip()
+                if msg.role == "user"
+                else (msg.english_translation or msg.text_content or "").strip()
+            ),
+        }
+        for msg in prior_messages
+        if (msg.english_translation or msg.text_content or "").strip()
+    ]
+    logger.info(
+        "_process_and_respond: loaded %d prior messages for context",
+        len(conversation_history),
+    )
+
     # Legal AI response (English in, English out)
     t0 = time.time()
     resolved_category, english_response = await get_legal_response(
@@ -106,6 +135,7 @@ async def _process_and_respond(
         category=db_session.category,
         extracted_document_text=extracted_context,
         session_language=safe_lang,
+        conversation_history=conversation_history,
     )
     logger.info("get_legal_response (LLM) took %.2fs — category=%s response_len=%d",
                 time.time() - t0, resolved_category, len(english_response))

@@ -50,7 +50,12 @@ def normalise_to_11_lang(lang_code: str) -> str:
     return "en-IN"
 
 
-async def _call_sarvam_llm(system_prompt: str, user_message: str, document_context: str) -> str:
+async def _call_sarvam_llm(
+    system_prompt: str,
+    user_message: str,
+    document_context: str,
+    conversation_history: list[dict] | None = None,
+) -> str:
     """
     Calls Sarvam AI's chat completions endpoint using Sarvam-30B.
 
@@ -63,9 +68,14 @@ async def _call_sarvam_llm(system_prompt: str, user_message: str, document_conte
     The LLM always receives English input and returns English output.
     Translation to/from the user's regional language is handled separately
     via translate_text() in the chat pipeline (_process_and_respond in chat.py).
+
+    conversation_history: list of dicts with keys 'role' ('user'|'assistant')
+    and 'content' (English text).  At most the last 5 pairs (10 messages) are
+    injected before the current query to keep the token budget predictable.
     """
     messages = [{"role": "system", "content": system_prompt}]
 
+    # Inject document context as a priming exchange (newest documents first)
     if document_context.strip():
         messages.append({
             "role": "user",
@@ -75,6 +85,14 @@ async def _call_sarvam_llm(system_prompt: str, user_message: str, document_conte
             "role": "assistant",
             "content": "Thank you. I have reviewed the document. Please ask your question."
         })
+
+    # Inject conversation history (last 5 pairs, oldest first)
+    if conversation_history:
+        for turn in conversation_history[-10:]:   # 10 = 5 user + 5 assistant
+            role = turn.get("role", "user")
+            content = (turn.get("content") or "").strip()
+            if role in ("user", "assistant") and content:
+                messages.append({"role": role, "content": content})
 
     messages.append({"role": "user", "content": user_message})
 
@@ -135,6 +153,7 @@ async def get_legal_response(
     category: str,
     extracted_document_text: str = "",
     session_language: str = "en-IN",
+    conversation_history: list[dict] | None = None,
 ) -> tuple[str, str]:
     """
     Main entry point for legal AI reasoning.
@@ -145,12 +164,17 @@ async def get_legal_response(
         extracted_document_text: OCR-extracted document text injected as context.
         session_language: BCP-47 code — used for validation logging only;
             actual translation to the user's language happens in _process_and_respond.
+        conversation_history: Last N user/assistant turns (English) for context.
+            Each item: {"role": "user"|"assistant", "content": str}.
 
     Returns:
         Tuple of (resolved_category, english_response_text).
     """
     resolved_category = classify_category(english_query, category)
-    system_prompt = CATEGORY_SYSTEM_PROMPTS.get(resolved_category, CATEGORY_SYSTEM_PROMPTS["consumer"])
+    system_prompt = CATEGORY_SYSTEM_PROMPTS.get(
+        resolved_category,
+        CATEGORY_SYSTEM_PROMPTS.get("consumer", ""),
+    )
 
     if (
         not settings.SARVAM_API_KEY
@@ -167,5 +191,6 @@ async def get_legal_response(
         system_prompt=system_prompt,
         user_message=english_query,
         document_context=extracted_document_text,
+        conversation_history=conversation_history,
     )
     return resolved_category, response_text

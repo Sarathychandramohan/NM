@@ -75,6 +75,7 @@ async def sarvam_isolation_test():
             english_query="What are my basic legal rights as a citizen of India?",
             category="general",
             extracted_document_text="",
+            session_language="en-IN",
         )
         elapsed = time.time() - t_start
         logger.info(

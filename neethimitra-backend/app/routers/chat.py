@@ -11,7 +11,7 @@ from app.core.dependencies import get_current_user
 from app.database import get_db
 from app.models import Message, Session as DBSession, User
 from app.schemas import ChatResponse
-from app.services.legal_ai import get_legal_response
+from app.services.legal_ai import get_legal_response, normalise_to_11_lang
 from app.services.sarvam_lid import detect_language
 from app.services.sarvam_stt import transcribe_audio
 from app.services.sarvam_translate import translate_text
@@ -67,9 +67,21 @@ async def _process_and_respond(
         session_id, input_type, session_language, detected_language,
     )
 
+    # Normalise session_language to Sarvam's 11-language set ONCE at pipeline entry.
+    # Mayura (translate), Sarvam-30B (LLM), and Bulbul v3 (TTS) all share the same
+    # 11-language constraint. Normalising here means the individual service functions
+    # receive a guaranteed-valid code, so they never hit a 400 Invalid Language error.
+    safe_lang = normalise_to_11_lang(session_language)
+    if safe_lang != session_language:
+        logger.warning(
+            "_process_and_respond: session_language '%s' outside 11-lang set — "
+            "normalised to '%s' for translate/LLM/TTS steps",
+            session_language, safe_lang,
+        )
+
     # Translate user message to English for the LLM
     t0 = time.time()
-    english_query = await translate_text(original_text, session_language, "en-IN", mode="formal")
+    english_query = await translate_text(original_text, safe_lang, "en-IN", mode="formal")
     logger.info("translate_text (user→en) took %.2fs", time.time() - t0)
 
     # Pull extracted document context from the session (newest documents first)
@@ -93,11 +105,13 @@ async def _process_and_respond(
         english_query=english_query,
         category=db_session.category,
         extracted_document_text=extracted_context,
+        session_language=safe_lang,
     )
     logger.info("get_legal_response (LLM) took %.2fs — category=%s response_len=%d",
                 time.time() - t0, resolved_category, len(english_response))
 
-    # Update session metadata
+    # Update session metadata (store the original session_language, not the normalised one,
+    # so the UI continues to show the user's original language preference)
     db_session.category = resolved_category
     db_session.language_code = session_language
     mark_session_active(db_session, "active")
@@ -116,21 +130,21 @@ async def _process_and_respond(
     )
     db.add(user_msg)
 
-    # Translate English response back to the session's authoritative language
+    # Translate English response back to the safe (normalised) session language
     t0 = time.time()
     regional_response = await translate_text(
         english_response,
         "en-IN",
-        session_language,
+        safe_lang,
         mode="modern-colloquial",
         output_script="native",
     )
-    logger.info("translate_text (en→%s) took %.2fs", session_language, time.time() - t0)
+    logger.info("translate_text (en→%s) took %.2fs", safe_lang, time.time() - t0)
 
     # Synthesize speech automatically ONLY if the input was voice
     if input_type == "voice":
         t0 = time.time()
-        audio_url = await synthesize_speech(regional_response, session_language)
+        audio_url = await synthesize_speech(regional_response, safe_lang)
         logger.info("synthesize_speech took %.2fs", time.time() - t0)
     else:
         audio_url = None
@@ -370,8 +384,9 @@ async def speak_message(
         raise HTTPException(status_code=404, detail="Message not found")
 
     if not message.audio_url:
-        lang = message.original_language or db_session.language_code or "en-IN"
-        logger.info("speak_message: synthesizing TTS for message_id=%d lang=%s", message_id, lang)
+        raw_lang = message.original_language or db_session.language_code or "en-IN"
+        lang = normalise_to_11_lang(raw_lang)
+        logger.info("speak_message: synthesizing TTS for message_id=%d lang=%s (raw=%s)", message_id, lang, raw_lang)
         t0 = time.time()
         audio_url = await synthesize_speech(message.text_content, lang)
         logger.info("speak_message: synthesize_speech took %.2fs", time.time() - t0)

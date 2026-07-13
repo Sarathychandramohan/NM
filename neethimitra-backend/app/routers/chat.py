@@ -267,6 +267,20 @@ async def send_text_message(
 
     except HTTPException:
         raise   # Intentional HTTP errors pass through unchanged
+    except RuntimeError as exc:
+        exc_str = str(exc)
+        print(f"[send_text_message] RUNTIME ERROR: {exc_str}", flush=True)
+        logger.exception("send_text_message RuntimeError: %s", exc)
+        # Specific user-friendly message for the Sarvam null-content pattern
+        if "returned no content" in exc_str or "exhausted token budget" in exc_str:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "The AI couldn't complete a response — it may have run out of processing capacity. "
+                    "Please try rephrasing your question or try again in a moment."
+                ),
+            )
+        raise HTTPException(status_code=500, detail=f"AI service error: {exc_str}")
     except Exception as exc:
         import traceback
         tb = traceback.format_exc()

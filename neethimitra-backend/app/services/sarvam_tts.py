@@ -78,13 +78,27 @@ def concatenate_wav_files(wav_chunks: list[bytes]) -> bytes:
     return bytes(header) + total_pcm_data
 
 
-async def synthesize_speech(text: str, target_language_code: str, speaker: str = "ananya") -> str:
+# Bulbul v3 valid speakers (confirmed 2026-07-13):
+# Female: meera, pavithra, maitreyi, aradhya, anushka, manisha, vidya, arya, ritu,
+#          priya, neha, pooja, simran, kavya, ishita, shreya, roopa, suhani, kavitha, rupali,
+#          tanya, shruti
+# Male:   karun, hitesh, aditya, rahul, rohan, amit, dev, ratan, varun, manan, sumit,
+#          kabir, aayan, shubh, ashutosh, advait, anand, tarun, sunny, mani, gokul,
+#          vijay, mohit, rehan, soham
+# Default: "meera" (neutral female, works across all 11 supported languages)
+DEFAULT_SPEAKER = "meera"
+
+
+async def synthesize_speech(text: str, target_language_code: str, speaker: str = DEFAULT_SPEAKER) -> str:
     """
     Converts text to speech using Sarvam AI Bulbul v3 (/text-to-speech endpoint).
 
     Model: bulbul:v3 (current; confirmed working 2026-07-13)
     Supported languages: the 11-language set (same as Sarvam-30B and Mayura).
     Any unsupported language_code is normalised to en-IN with a warning log.
+
+    Speaker: defaults to "meera" (valid female voice for all 11 languages).
+      See DEFAULT_SPEAKER and the comment block above for the full speaker list.
 
     Chunking:
       - Total text is capped at 2,500 characters.

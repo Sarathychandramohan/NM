@@ -85,7 +85,9 @@ async def _call_sarvam_llm(system_prompt: str, user_message: str, document_conte
     payload = {
         "model": "sarvam-30b",   # sarvam-m is deprecated; sarvam-30b confirmed working 2026-07-13
         "messages": messages,
-        "max_tokens": 1024,
+        "max_tokens": 2000,      # Raised from 1024: sarvam-30b uses internal reasoning tokens;
+                                 # 1024 was too low and caused reasoning to exhaust the budget
+                                 # before producing a final answer (content=null in response).
         "temperature": 0.3,
     }
 
@@ -108,7 +110,24 @@ async def _call_sarvam_llm(system_prompt: str, user_message: str, document_conte
     if not choices:
         raise RuntimeError("Sarvam LLM returned no choices in response")
 
-    return choices[0].get("message", {}).get("content", "").strip()
+    response_json = data
+    content = choices[0].get("message", {}).get("content")
+    if content is None:
+        # sarvam-30b can return content=null when internal reasoning consumes
+        # the full max_tokens budget before producing a final answer.
+        # Log the entire raw response so we can inspect finish_reason and
+        # any reasoning_content field that might be populated instead.
+        logger.error(
+            "Sarvam LLM returned null content (reasoning-only response?). "
+            "finish_reason=%s full_response=%s",
+            choices[0].get("finish_reason", "unknown"),
+            response_json,
+        )
+        raise RuntimeError(
+            "Sarvam LLM returned no content "
+            "(model exhausted token budget on reasoning — try rephrasing your question)"
+        )
+    return content.strip()
 
 
 async def get_legal_response(

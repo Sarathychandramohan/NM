@@ -33,3 +33,18 @@ def create_access_token(
 
 def create_refresh_token() -> str:
     return secrets.token_urlsafe(48)
+
+
+def create_file_download_token(user_id: int, filename: str, expires_minutes: int = 60) -> str:
+    expire = datetime.now(timezone.utc) + timedelta(minutes=expires_minutes)
+    to_encode = {"exp": expire, "sub": str(user_id), "filename": filename}
+    return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+
+
+def sign_file_url(file_path: str, user_id: int) -> str:
+    import os
+    if not file_path:
+        return file_path
+    filename = os.path.basename(file_path)
+    token = create_file_download_token(user_id, filename)
+    return f"{file_path}?token={token}"

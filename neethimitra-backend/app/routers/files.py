@@ -1,12 +1,13 @@
 import os
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session as DBSession
+from jose import jwt
 
 from app.config import settings
-from app.core.dependencies import get_current_user
+from app.core.dependencies import get_current_user, oauth2_scheme, _decode_user_from_token
 from app.database import get_db
 from app.models import Document, User
 from app.schemas import DocumentResponse
@@ -23,6 +24,33 @@ def _safe_path(base_dir: str, filename: str) -> str:
     if not os.path.exists(path):
         raise HTTPException(status_code=404, detail="File not found")
     return path
+
+
+def verify_token_or_auth(
+    filename: str,
+    token: str | None = Query(None),
+    auth_token: str | None = Depends(oauth2_scheme),
+    db: DBSession = Depends(get_db),
+) -> User:
+    if token:
+        try:
+            payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+            user_id = payload.get("sub")
+            token_filename = payload.get("filename")
+            if user_id and os.path.basename(token_filename) == os.path.basename(filename):
+                user = db.query(User).filter(User.id == int(user_id), User.is_active.is_(True)).first()
+                if user:
+                    return user
+        except Exception:
+            pass
+
+    # Fallback to standard Bearer token
+    if auth_token:
+        user = _decode_user_from_token(auth_token, db)
+        if user:
+            return user
+
+    raise HTTPException(status_code=401, detail="Unauthorized")
 
 
 @router.get("/api/files", response_model=List[DocumentResponse], summary="List all documents uploaded by the current user")
@@ -51,12 +79,11 @@ def get_audio_file(filename: str):
 
 
 # Complaint PDFs and uploaded documents are sensitive — authentication required.
-# The frontend must pass the Bearer token when fetching these (use fetch() with
-# Authorization header, not a raw <a href> or <img src>).
+# Supports both standard Authorization header and signed expiring query tokens.
 @router.get("/static/complaints/{filename:path}")
 def get_complaint_file(
     filename: str,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(verify_token_or_auth),
 ):
     path = _safe_path(settings.PDF_DIR, filename)
     return FileResponse(path, media_type="application/pdf", filename=os.path.basename(path))
@@ -65,7 +92,7 @@ def get_complaint_file(
 @router.get("/static/uploads/{filename:path}")
 def get_upload_file(
     filename: str,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(verify_token_or_auth),
 ):
     path = _safe_path(settings.UPLOAD_DIR, filename)
     return FileResponse(path, filename=os.path.basename(path))

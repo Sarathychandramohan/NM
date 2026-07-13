@@ -4,7 +4,7 @@ import { Platform } from 'react-native';
 import { LANGUAGES, Language, DEFAULT_LANGUAGE } from '@constants/languages';
 import * as SecureStore from 'expo-secure-store';
 
-import { apiClient, API_BASE_URL } from '@utils/apiClient';
+import { apiClient, API_BASE_URL, registerAuthHandlers } from '@utils/apiClient';
 
 // Helper to prevent Log Injection (CWE-117): Sanitize variable values printed in logs
 function safeLogVal(val: unknown): string {
@@ -750,16 +750,29 @@ export const useAppStore = create<AppState>()(
         const { activeSession, authToken } = get();
         let sessionId = activeSession ? activeSession.id : null;
         
+        // ── Inferred category detection from filename keywords ──
+        const fnLower = filename.toLowerCase();
+        let targetCategory = CATEGORIES.find(c => c.id === 'general')!;
+        if (fnLower.includes('fir') || fnLower.includes('complaint') || fnLower.includes('police') || fnLower.includes('arrest')) {
+          targetCategory = CATEGORIES.find(c => c.id === 'police') || targetCategory;
+        } else if (fnLower.includes('medical') || fnLower.includes('bill') || fnLower.includes('hospital') || fnLower.includes('health') || fnLower.includes('doctor') || fnLower.includes('prescription')) {
+          targetCategory = CATEGORIES.find(c => c.id === 'health') || targetCategory;
+        } else if (fnLower.includes('rti') || fnLower.includes('info') || fnLower.includes('reply') || fnLower.includes('government') || fnLower.includes('govt')) {
+          targetCategory = CATEGORIES.find(c => c.id === 'rti') || targetCategory;
+        } else if (fnLower.includes('land') || fnLower.includes('property') || fnLower.includes('patta') || fnLower.includes('chitta') || fnLower.includes('deed') || fnLower.includes('registration') || fnLower.includes('adangal')) {
+          targetCategory = CATEGORIES.find(c => c.id === 'land') || targetCategory;
+        }
+
         if (!sessionId) {
-          await get().startSession({
-            id: 'general',
-            label: 'General Legal Query',
-            emoji: '💬',
-            description: '',
-            colorKey: 'general',
-          });
-          const newActive = get().activeSession;
-          sessionId = newActive ? newActive.id : 'general_session';
+          try {
+            await get().startSession(targetCategory);
+            const newActive = get().activeSession;
+            sessionId = newActive ? newActive.id : 'general_session';
+          } catch (err) {
+            console.error('uploadDocument: failed to auto-start session:', safeLogVal(err));
+            set({ activeOverlay: 'error' });
+            return;
+          }
         }
         const mimeType = uploadMimeType(filename, type);
 
@@ -804,6 +817,8 @@ export const useAppStore = create<AppState>()(
             }));
             const activeId = get().activeSession?.id;
             if (activeId) await get().loadSession(activeId);
+            // Silently fetch user documents to synchronize signed URLs
+            get().fetchUserDocuments().catch(() => {});
           } else {
             const err = await apiResponse.text();
             throw new Error(`Upload failed: ${err}`);
@@ -814,10 +829,11 @@ export const useAppStore = create<AppState>()(
             documents: s.documents.map((d) =>
               d.id === newDoc.id ? { ...d, status: 'failed' } : d
             ),
+            activeOverlay: 'error',
           }));
-          throw err;
         }
       },
+
 
       fetchUserDocuments: async () => {
         try {
@@ -1155,4 +1171,24 @@ export const useAppStore = create<AppState>()(
       }),
     }
   )
+);
+
+registerAuthHandlers(
+  (accessToken, refreshToken) => {
+    useAppStore.setState({ authToken: accessToken, refreshToken });
+  },
+  () => {
+    useAppStore.setState({
+      authToken: null,
+      refreshToken: null,
+      userName: null,
+      userPhone: null,
+      userEmail: null,
+      profileImage: null,
+      isAnonymousGuest: false,
+      sessions: [],
+      documents: [],
+      activeSession: null,
+    });
+  }
 );

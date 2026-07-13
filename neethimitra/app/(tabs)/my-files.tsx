@@ -13,8 +13,10 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import {
   Upload, FileText, User, Home, Briefcase,
-  Heart, Scale, CheckCircle2, Clock, AlertCircle,
+  Heart, Scale, CheckCircle2, Clock, AlertCircle, X
 } from 'lucide-react-native';
+import { ActivityIndicator } from 'react-native';
+import ErrorBoundary from '@/components/ui/ErrorBoundary';
 
 const DOC_TYPE_ICONS: Record<string, any> = {
   Aadhaar:      User,
@@ -42,20 +44,33 @@ export default function DocumentsScreen() {
   const scale = getTextScale(textSize);
   const isWeb = Platform.OS === 'web';
 
+  const [isUploading, setIsUploading] = React.useState(false);
+  const [uploadError, setUploadError] = React.useState<string | null>(null);
+
   const handlePickDocument = async () => {
     // Block guest users — show login prompt
     if (isAnonymousGuest) {
       setOverlay('login_prompt');
       return;
     }
+    setIsUploading(true);
+    setUploadError(null);
     try {
       const result = await DocumentPicker.getDocumentAsync({ type: '*/*', copyToCacheDirectory: true });
       if (!result.canceled && result.assets?.length) {
         const a = result.assets[0];
         await uploadDocument(a.uri, a.name, a.mimeType || 'Document');
         setOverlay('success');
+      } else {
+        setIsUploading(false);
       }
-    } catch { setOverlay('error'); }
+    } catch (err: any) {
+      console.error('Pick Document failed:', err);
+      setUploadError(err?.message || 'Failed to upload document. Please try again.');
+      setOverlay('error');
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   const showAlert = (title: string, msg: string) => {
@@ -77,10 +92,18 @@ export default function DocumentsScreen() {
       const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.8 });
       if (!result.canceled && result.assets?.length) {
         const a = result.assets[0];
+        setIsUploading(true);
+        setUploadError(null);
         await uploadDocument(a.uri, a.fileName ?? `capture_${Date.now()}.jpg`, getImageMimeType(a));
         setOverlay('success');
       }
-    } catch { setOverlay('error'); }
+    } catch (err: any) {
+      console.error('Capture image failed:', err);
+      setUploadError(err?.message || 'Failed to upload captured image.');
+      setOverlay('error');
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   const handlePickImage = async () => {
@@ -92,10 +115,18 @@ export default function DocumentsScreen() {
       const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.8 });
       if (!result.canceled && result.assets?.length) {
         const a = result.assets[0];
+        setIsUploading(true);
+        setUploadError(null);
         await uploadDocument(a.uri, a.fileName ?? `image_${Date.now()}.jpg`, getImageMimeType(a));
         setOverlay('success');
       }
-    } catch { setOverlay('error'); }
+    } catch (err: any) {
+      console.error('Pick image failed:', err);
+      setUploadError(err?.message || 'Failed to upload selected image.');
+      setOverlay('error');
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   const handleDocPress = async (doc: any) => {
@@ -160,15 +191,39 @@ export default function DocumentsScreen() {
           </Text>
         </View>
 
+        {/* Upload Status Banners */}
+        {uploadError && (
+          <View style={[styles.banner, { backgroundColor: isDarkMode ? 'rgba(239,68,68,0.15)' : '#FEE2E2', borderColor: '#EF4444' }]}>
+            <AlertCircle size={16} color="#EF4444" />
+            <Text style={{ color: '#EF4444', fontSize: 13 * scale, flex: 1, fontFamily: 'PlusJakartaSans_500Medium' }}>
+              {uploadError}
+            </Text>
+            <TouchableOpacity onPress={() => setUploadError(null)}>
+              <X size={16} color="#EF4444" />
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {isUploading && (
+          <View style={[styles.banner, { backgroundColor: isDarkMode ? 'rgba(249,115,22,0.15)' : '#FFF7ED', borderColor: Colors.orange }]}>
+            <ActivityIndicator size="small" color={Colors.orange} />
+            <Text style={{ color: Colors.orange, fontSize: 13 * scale, flex: 1, fontFamily: 'PlusJakartaSans_500Medium' }}>
+              Uploading and analyzing document...
+            </Text>
+          </View>
+        )}
+
         {/* Upload trigger — tap opens the upload bottom sheet (guest blocked inside DocumentUpload) */}
         <TouchableOpacity
           onPress={() => {
             if (isAnonymousGuest) { setOverlay('login_prompt'); return; }
             setOverlay('upload');
           }}
+          disabled={isUploading}
           style={[styles.uploadCard, {
             backgroundColor: isDarkMode ? '#1A1207' : '#FFF7ED',
             borderColor:     Colors.orange + '60',
+            opacity: isUploading ? 0.6 : 1,
           }]}
           activeOpacity={0.8}
         >
@@ -258,7 +313,11 @@ export default function DocumentsScreen() {
     </SafeAreaView>
   );
 
-  return screenContent;
+  return (
+    <ErrorBoundary>
+      {screenContent}
+    </ErrorBoundary>
+  );
 }
 
 const styles = StyleSheet.create({
@@ -298,4 +357,13 @@ const styles = StyleSheet.create({
   docMeta: { fontSize: 12, fontFamily: 'PlusJakartaSans_400Regular' },
   badge:   { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 5, borderRadius: 10 },
   badgeText:{ fontSize: 11, fontFamily: 'PlusJakartaSans_700Bold' },
+  banner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 8,
+  },
 });

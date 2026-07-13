@@ -35,9 +35,9 @@ app = FastAPI(title="NeethiMitra AI Backend")
 async def global_exception_handler(request: Request, exc: Exception):
     import traceback
     tb = traceback.format_exc()
-    print(f"[GLOBAL EXCEPTION HANDLER] {request.method} {request.url.path} → {type(exc).__name__}: {exc}\n{tb}", flush=True)
+    print(f"[GLOBAL EXCEPTION HANDLER] {request.method} {request.url.path} -> {type(exc).__name__}: {exc}\n{tb}", flush=True)
     logger.exception(
-        "UNHANDLED EXCEPTION: %s %s → %s: %s",
+        "UNHANDLED EXCEPTION: %s %s -> %s: %s",
         request.method, request.url.path, type(exc).__name__, exc,
     )
     return JSONResponse(

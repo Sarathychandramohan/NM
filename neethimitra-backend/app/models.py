@@ -62,13 +62,16 @@ class Session(Base):
     is_active = Column(Boolean, default=True)
     status = Column(String, default="active", nullable=False)
     source = Column(String, default="app", nullable=False)
+    session_type = Column(String, default="chat", nullable=False)
+    source_document_id = Column(Integer, ForeignKey("documents.id", ondelete="SET NULL"), nullable=True)
     last_activity_at = Column(DateTime, default=get_utc_now, nullable=True)
     created_at = Column(DateTime, default=get_utc_now)
     updated_at = Column(DateTime, default=get_utc_now, onupdate=get_utc_now)
 
     user = relationship("User", back_populates="sessions")
     messages = relationship("Message", back_populates="session", cascade="all, delete-orphan")
-    documents = relationship("Document", back_populates="session", cascade="all, delete-orphan")
+    documents = relationship("Document", back_populates="session", cascade="all, delete-orphan", foreign_keys="[Document.session_id]")
+    source_document = relationship("Document", foreign_keys=[source_document_id])
     complaints = relationship("Complaint", back_populates="session", cascade="all, delete-orphan")
     events = relationship("SessionEvent", back_populates="session", cascade="all, delete-orphan")
 
@@ -110,7 +113,8 @@ class Document(Base):
     extracted_summary = Column(Text, nullable=True)
     created_at = Column(DateTime, default=get_utc_now)
 
-    session = relationship("Session", back_populates="documents")
+    session = relationship("Session", back_populates="documents", foreign_keys="[Document.session_id]")
+
 
 class Complaint(Base):
     __tablename__ = "complaints"

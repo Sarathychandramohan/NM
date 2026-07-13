@@ -87,6 +87,7 @@ export type Session = {
   id: string;
   categoryId: string;
   categoryLabel: string;
+  title: string;           // auto-generated from first message, or default category name
   messages: Message[];
   startedAt: Date;
 };
@@ -261,6 +262,7 @@ export const useAppStore = create<AppState>()(
           id: sessionId,
           categoryId: category.id,
           categoryLabel: category.label,
+          title: category.label,   // default; overwritten after first message
           messages: [],
           startedAt: new Date(),
         };
@@ -316,6 +318,7 @@ export const useAppStore = create<AppState>()(
               id: s.id,
               categoryId: categoryIdFromLabel(s.category),
               categoryLabel: s.category,
+              title: s.title || s.category,   // backend title (auto-generated from first msg)
               // Sessions list endpoint may not include full messages; keep existing messages if already loaded
               messages: s.messages
                 ? s.messages.map((m: any) => ({
@@ -365,6 +368,7 @@ export const useAppStore = create<AppState>()(
               // BUG-F020 FIX: Use robust category mapping instead of regex stripping
               categoryId: categoryIdFromLabel(data.category),
               categoryLabel: data.category,
+              title: data.title || data.category,
               messages: mappedMessages,
               startedAt: new Date(data.created_at),
             };
@@ -498,6 +502,9 @@ export const useAppStore = create<AppState>()(
                 sessions: s.sessions.map((sess) => sess.id === updated.id ? updated : sess),
               };
             });
+            // Refresh session list silently so the sidebar shows updated title
+            // (backend auto-generates title from first message)
+            get().fetchSessions().catch(() => {});
           } else if (response.status === 401 || response.status === 403) {
             const isGuest = get().isAnonymousGuest;
             set({

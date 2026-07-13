@@ -146,6 +146,23 @@ async def _process_and_respond(
     db_session.language_code = session_language
     mark_session_active(db_session, "active")
 
+    # Auto-title: if the session still has the default generated title (e.g. "Land & Property Case"
+    # or "{Category} Case"), replace it with the first 45 chars of the user's English query
+    # so the sidebar shows a meaningful preview instead of a generic label.
+    default_title_suffixes = ("case", "query", "category")
+    current_title_lower = (db_session.title or "").lower().strip()
+    is_default_title = (
+        not current_title_lower
+        or any(current_title_lower.endswith(s) for s in default_title_suffixes)
+        or current_title_lower in {c.lower() for c in ["consumer", "cybercrime", "land", "labor", "women_dv", "senior", "police", "health", "rti", "complaint"]}
+    )
+    if is_default_title and not conversation_history:
+        # First exchange — set a descriptive title from the user's query
+        title_candidate = english_query.strip()
+        db_session.title = (title_candidate[:45] + "…") if len(title_candidate) > 45 else title_candidate
+        logger.info("Auto-titled session %s: '%s'", session_id, db_session.title)
+
+
     # Persist user message
     user_msg = Message(
         session_id=session_id,

@@ -19,7 +19,7 @@ import { Colors } from '@constants/colors';
 import { UI_TRANSLATIONS } from '@constants/translations';
 import {
   Home, Briefcase, ShieldAlert, Heart, User, Scale,
-  ChevronDown, ChevronRight, Clock, MessageSquare, X,
+  ChevronDown, ChevronRight, Clock, MessageSquare, X, Plus, Trash2,
 } from 'lucide-react-native';
 import Animated, {
   useSharedValue, useAnimatedStyle, withTiming, Easing,
@@ -61,12 +61,19 @@ interface Props {
 
 export function ChatHistorySidebar({ isOpen, onClose, currentCategoryId }: Props) {
   const { width: screenWidth } = useWindowDimensions();
-  const { isDarkMode, sessions, loadSession, selectedLanguage, textSize, startSession } = useAppStore();
+  const { isDarkMode, sessions, loadSession, selectedLanguage, textSize, startSession, fetchSessions, deleteSession, authToken } = useAppStore();
   const router = useRouter();
   const C = isDarkMode ? Colors.dark : Colors.light;
   const t = UI_TRANSLATIONS[selectedLanguage.code] || UI_TRANSLATIONS['en-IN'];
   const scale = getTextScale(textSize);
   const isWeb = Platform.OS === 'web';
+
+  // Fetch sessions from backend when sidebar mounts (for persistence across restarts)
+  useEffect(() => {
+    if (authToken) {
+      fetchSessions().catch(() => {});
+    }
+  }, [authToken]);
 
   // Horizontal resizing state on Web
   const [sidebarWidth, setSidebarWidth] = useState(280);
@@ -150,6 +157,12 @@ export function ChatHistorySidebar({ isOpen, onClose, currentCategoryId }: Props
     router.push(`/chat/${session.categoryId}` as any);
   };
 
+  const handleNewSession = async (cat: typeof CATEGORIES[0]) => {
+    await startSession(cat);
+    onClose();
+    router.push(`/chat/${cat.id}` as any);
+  };
+
   const toggleCategory = (id: string) => {
     setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
   };
@@ -226,8 +239,6 @@ export function ChatHistorySidebar({ isOpen, onClose, currentCategoryId }: Props
           const isExpanded = !!expanded[cat.id];
           const isCurrent = cat.id === currentCategoryId;
 
-          if (catSessions.length === 0) return null;
-
           return (
             <View key={cat.id} style={styles.categoryGroup}>
               {/* Category header row — tapping expands/collapses */}
@@ -260,30 +271,44 @@ export function ChatHistorySidebar({ isOpen, onClose, currentCategoryId }: Props
                     {catSessions.length}
                   </Text>
                 </View>
+                {/* + new session button */}
+                <TouchableOpacity
+                  onPress={() => handleNewSession(cat)}
+                  style={{
+                    width: 22, height: 22, borderRadius: 6,
+                    alignItems: 'center', justifyContent: 'center',
+                    backgroundColor: isDarkMode ? meta.bgDark : meta.bg,
+                    marginRight: 2,
+                  }}
+                  activeOpacity={0.7}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Plus size={11} color={meta.color} strokeWidth={2.5} />
+                </TouchableOpacity>
                 {isExpanded
                   ? <ChevronDown size={13} color={C.textSecondary} strokeWidth={2} />
-                  : <ChevronRight size={13} color={C.textSecondary} strokeWidth={2} />
+                  : <ChevronRight size={13} color={C.textSecondary} strokeWidth={1.5} />
                 }
               </TouchableOpacity>
 
               {/* Session list */}
               {isExpanded && catSessions.map((session) => {
-                const lastMsg = session.messages[session.messages.length - 1];
-                const preview = lastMsg?.text ?? (t.noMessages ?? 'No messages');
-                const isActiveSession = session.categoryId === currentCategoryId &&
-                  session.messages.length > 0;
+                const isNew = !session.title || session.title === session.categoryLabel;
+                const preview = isNew ? '💬 New session' : session.title;
 
                 return (
-                  <TouchableOpacity
+                  <View
                     key={session.id}
-                    onPress={() => handleLoadSession(session)}
-                    activeOpacity={0.75}
                     style={[
                       styles.sessionRow,
-                      { borderLeftColor: meta.color + '40' },
+                      { borderLeftColor: meta.color + '40', flexDirection: 'row', alignItems: 'center' },
                     ]}
                   >
-                    <View style={{ flex: 1 }}>
+                    <TouchableOpacity
+                      onPress={() => handleLoadSession(session)}
+                      activeOpacity={0.75}
+                      style={{ flex: 1 }}
+                    >
                       <View style={styles.sessionTopRow}>
                         <Text
                           style={[styles.sessionDate, { color: C.textSecondary, fontSize: 10 * scale }]}
@@ -291,11 +316,6 @@ export function ChatHistorySidebar({ isOpen, onClose, currentCategoryId }: Props
                         >
                           {fmtDate(session.startedAt, selectedLanguage.code)} · {fmtTime(session.startedAt, selectedLanguage.code)}
                         </Text>
-                        <View style={[styles.msgCountBadge, { backgroundColor: isDarkMode ? '#2A2A35' : '#F1F5F9' }]}>
-                          <Text style={[styles.msgCountText, { color: C.textSecondary, fontSize: 9 * scale }]}>
-                            {session.messages.length}
-                          </Text>
-                        </View>
                       </View>
                       <Text
                         style={[styles.sessionPreview, { color: C.text, fontSize: 12 * scale }]}
@@ -303,8 +323,15 @@ export function ChatHistorySidebar({ isOpen, onClose, currentCategoryId }: Props
                       >
                         {preview}
                       </Text>
-                    </View>
-                  </TouchableOpacity>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => deleteSession(session.id)}
+                      style={{ padding: 6 }}
+                      activeOpacity={0.7}
+                    >
+                      <Trash2 size={12} color="#EF4444" />
+                    </TouchableOpacity>
+                  </View>
                 );
               })}
             </View>

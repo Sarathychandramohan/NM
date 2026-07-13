@@ -262,13 +262,21 @@ function WebSidebar({
 }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { isDarkMode, setOverlay, startSession, sessions, loadSession, deleteSession, logout, userName, userEmail, selectedLanguage } = useAppStore();
+  const { isDarkMode, setOverlay, startSession, sessions, loadSession, deleteSession, logout, userName, userEmail, selectedLanguage, fetchSessions, authToken } = useAppStore();
   const C = isDarkMode ? Colors.dark : Colors.light;
   const t = UI_TRANSLATIONS[selectedLanguage.code] || UI_TRANSLATIONS['en-IN'];
 
   const displayName = userName || 'Guest Citizen';
   const displayPhone = userEmail ? userEmail : 'Guest';
   const initial = displayName.charAt(0).toUpperCase();
+
+  // Fetch sessions from backend when the sidebar mounts or auth token changes
+  // This ensures sessions persist after page refresh on web
+  React.useEffect(() => {
+    if (authToken) {
+      fetchSessions().catch(() => {});
+    }
+  }, [authToken]);
 
   // Track which categories have their history list expanded
   const [expandedCats, setExpandedCats] = React.useState<Record<string, boolean>>({});
@@ -558,8 +566,10 @@ function WebSidebar({
                 {!collapsed && isExpanded && hasHistory && (
                   <View style={{ paddingLeft: 14, marginBottom: 4 }}>
                     {recentSessions.map((sess) => {
-                      const lastMsg = sess.messages[sess.messages.length - 1];
-                      const preview = lastMsg ? lastMsg.text.slice(0, 40) + (lastMsg.text.length > 40 ? '…' : '') : 'Empty session';
+                      // Use session title (auto-generated from first message by backend).
+                      // New sessions that haven't had a message yet show "New session".
+                      const isNew = !sess.title || sess.title === sess.categoryLabel;
+                      const preview = isNew ? '💬 New session' : sess.title;
                       return (
                         <View
                           key={sess.id}

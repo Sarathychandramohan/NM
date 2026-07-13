@@ -104,6 +104,7 @@ function MessageBubble({
   t,
   playResponseAudio,
   loadingAudioId,
+  systemLangCode,
 }: {
   item: Message;
   isDarkMode: boolean;
@@ -112,10 +113,34 @@ function MessageBubble({
   t: any;
   playResponseAudio: (messageId: string, uri?: string) => void;
   loadingAudioId: string | null;
+  systemLangCode: string;
 }) {
   const isUser = item.role === 'user';
   const [showTranslation, setShowTranslation] = useState(false);
-  const hasTranslation = !!item.englishTranslation;
+
+  // ── Translation logic ────────────────────────────────────────────────────
+  // item.text             = the text in the session's regional language (may be English
+  //                         if the user chose en-IN)
+  // item.englishTranslation = always the English version
+  //
+  // Rule:
+  //  - If system lang != en-IN: primary = regional, translation = English
+  //  - If system lang == en-IN: primary = English (item.text), no translate button
+  //    (response is already in English — nothing to translate to)
+  //  - For USER messages: translate button shows English equivalent of what they typed
+  //    (useful when they type in a regional language and want to confirm the English)
+
+  const isEnglishSession = systemLangCode === 'en-IN';
+
+  // What to show in the translation panel when expanded
+  const translationText = item.englishTranslation ?? '';
+
+  // Show translate button only when there is meaningful translation text
+  // and the session is not already in English
+  const hasTranslation = !!translationText && !isEnglishSession;
+
+  // Button label: shows target language direction
+  const translateLabel   = showTranslation ? 'Show Original' : '⇄ Translate';
 
   return (
     <View style={[styles.msgRow, isUser ? styles.msgRowUser : styles.msgRowAI]}>
@@ -141,25 +166,22 @@ function MessageBubble({
             </View>
           )}
 
-          {!showTranslation ? (
-            <Text style={[styles.bubbleText, { color: '#FFFFFF', fontSize: 14 * scale }]}>
-              {item.text}
-            </Text>
-          ) : (
-            <View style={{ gap: 6 }}>
-              {/* Original regional content */}
-              <Text style={[styles.bubbleText, { color: '#FFFFFF', fontSize: 14 * scale }]}>
-                {item.text}
-              </Text>
-              {/* ⇄ Divider line */}
+          {/* Primary text — always shown */}
+          <Text style={[styles.bubbleText, { color: '#FFFFFF', fontSize: 14 * scale }]}>
+            {item.text}
+          </Text>
+
+          {/* Translation panel — same weight/color, just separated by divider */}
+          {showTranslation && hasTranslation && (
+            <View style={{ gap: 6, marginTop: 6 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginVertical: 2 }}>
                 <View style={{ flex: 1, height: 1, backgroundColor: 'rgba(255,255,255,0.25)' }} />
-                <Text style={{ fontSize: 13, color: '#FFFFFF' }}>⇄</Text>
+                <Text style={{ fontSize: 12, color: 'rgba(255,255,255,0.7)' }}>English</Text>
                 <View style={{ flex: 1, height: 1, backgroundColor: 'rgba(255,255,255,0.25)' }} />
               </View>
-              {/* English translation */}
-              <Text style={[styles.bubbleText, { color: 'rgba(255,255,255,0.85)', fontSize: 14 * scale, fontStyle: 'italic' }]}>
-                {item.englishTranslation || '(No translation available)'}
+              {/* Plain text — no italic, full white, same weight */}
+              <Text style={[styles.bubbleText, { color: '#FFFFFF', fontSize: 14 * scale }]}>
+                {translationText}
               </Text>
             </View>
           )}
@@ -179,7 +201,7 @@ function MessageBubble({
                 activeOpacity={0.7}
               >
                 <Text style={[styles.translateBtnText, { color: '#FFFFFF', fontSize: 11 * scale }]}>
-                  ⇄ {showTranslation ? 'Show Original' : 'Translate'}
+                  {translateLabel}
                 </Text>
               </TouchableOpacity>
             )}
@@ -193,25 +215,22 @@ function MessageBubble({
             borderWidth: 1, borderColor: C.surfaceBorder, borderBottomLeftRadius: 4
           },
         ]}>
-          {!showTranslation ? (
-            <Text style={[styles.bubbleText, { color: C.text, fontSize: 14 * scale }]}>
-              {item.text}
-            </Text>
-          ) : (
-            <View style={{ gap: 6 }}>
-              {/* Original regional content */}
-              <Text style={[styles.bubbleText, { color: C.text, fontSize: 14 * scale }]}>
-                {item.text}
-              </Text>
-              {/* ⇄ Divider line */}
+          {/* Primary text — always shown */}
+          <Text style={[styles.bubbleText, { color: C.text, fontSize: 14 * scale }]}>
+            {item.text}
+          </Text>
+
+          {/* Translation panel — plain text, same color as primary, no italic */}
+          {showTranslation && hasTranslation && (
+            <View style={{ gap: 6, marginTop: 6 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginVertical: 2 }}>
                 <View style={{ flex: 1, height: 1, backgroundColor: C.surfaceBorder }} />
-                <Text style={{ fontSize: 13, color: Colors.orange }}>⇄</Text>
+                <Text style={{ fontSize: 12, color: Colors.orange }}>English</Text>
                 <View style={{ flex: 1, height: 1, backgroundColor: C.surfaceBorder }} />
               </View>
-              {/* English translation */}
-              <Text style={[styles.bubbleText, { color: C.textSecondary, fontSize: 14 * scale, fontStyle: 'italic' }]}>
-                {item.englishTranslation || '(No translation available)'}
+              {/* Plain text — same color/weight as original, no italic */}
+              <Text style={[styles.bubbleText, { color: C.text, fontSize: 14 * scale }]}>
+                {translationText}
               </Text>
             </View>
           )}
@@ -231,7 +250,7 @@ function MessageBubble({
                 activeOpacity={0.7}
               >
                 <Text style={[styles.translateBtnText, { color: Colors.orange, fontSize: 11 * scale }]}>
-                  ⇄ {showTranslation ? 'Show Original' : 'Translate'}
+                  {translateLabel}
                 </Text>
               </TouchableOpacity>
             )}
@@ -531,9 +550,10 @@ export default function ChatScreen() {
         t={t}
         playResponseAudio={playResponseAudio}
         loadingAudioId={loadingAudioId}
+        systemLangCode={selectedLanguage.code}
       />
     );
-  }, [isDarkMode, C, scale, t, loadingAudioId]);
+  }, [isDarkMode, C, scale, t, loadingAudioId, selectedLanguage.code]);
 
 
 

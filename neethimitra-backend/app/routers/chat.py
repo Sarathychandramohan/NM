@@ -201,69 +201,78 @@ async def send_text_message(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    # DIAGNOSTIC: print() goes straight to stdout unbuffered, proving the route handler was reached
+    # even if the logging system is misconfigured. Remove after issue is confirmed resolved.
+    print(f"[send_text_message] ENTRY session_id={session_id} user_id={current_user.id}", flush=True)
+
     t_entry = time.time()
     logger.info(
         "send_text_message ENTRY — session_id=%s user_id=%s text_len=%d",
         session_id, current_user.id, len(payload.text_content or ""),
     )
 
-    if not payload.text_content or not payload.text_content.strip():
-        raise HTTPException(status_code=400, detail="text_content must not be empty")
-
-    # Enforce guest limit BEFORE any processing
-    _enforce_guest_limit(current_user)
-
     try:
-        db_session = (
-            db.query(DBSession)
-            .filter(DBSession.id == session_id, DBSession.user_id == current_user.id)
-            .first()
+        if not payload.text_content or not payload.text_content.strip():
+            raise HTTPException(status_code=400, detail="text_content must not be empty")
+
+        # Enforce guest limit BEFORE any processing
+        _enforce_guest_limit(current_user)
+
+        try:
+            db_session = (
+                db.query(DBSession)
+                .filter(DBSession.id == session_id, DBSession.user_id == current_user.id)
+                .first()
+            )
+        except Exception as exc:
+            logger.exception(
+                "send_text_message: DB error fetching session_id=%s user_id=%s: %s",
+                session_id, current_user.id, exc,
+            )
+            print(f"[send_text_message] DB ERROR: {exc}", flush=True)
+            raise HTTPException(status_code=500, detail="Database error while loading session. Please try again.")
+
+        if not db_session:
+            raise HTTPException(status_code=404, detail="Session not found or not owned by user")
+
+        logger.info("send_text_message: session found in %.3fs", time.time() - t_entry)
+        print(f"[send_text_message] session found, language={db_session.language_code}", flush=True)
+
+        original_text = payload.text_content.strip()
+
+        # The session's language_code is the AUTHORITATIVE response language.
+        requested_language = db_session.language_code or current_user.preferred_language or "en-IN"
+
+        try:
+            detected_language = await detect_language(original_text)
+        except Exception as exc:
+            logger.warning("detect_language failed (non-fatal, using session language): %s", exc)
+            detected_language = requested_language
+
+        logger.info(
+            "send_text_message: session_language=%s detected_language=%s",
+            requested_language, detected_language,
         )
-    except Exception as exc:
-        logger.exception(
-            "send_text_message: DB error fetching session_id=%s user_id=%s — "
-            "this would have been a silent 502 before this fix: %s",
-            session_id, current_user.id, exc,
+
+        return await _process_and_respond(
+            session_id=session_id,
+            original_text=original_text,
+            session_language=requested_language,
+            detected_language=detected_language,
+            input_type="text",
+            db_session=db_session,
+            db=db,
+            current_user=current_user,
         )
-        raise HTTPException(status_code=500, detail="Database error while loading session. Please try again.")
 
-    if not db_session:
-        raise HTTPException(status_code=404, detail="Session not found or not owned by user")
-
-    logger.info("send_text_message: session found in %.3fs", time.time() - t_entry)
-
-    original_text = payload.text_content.strip()
-
-    # The session's language_code is the AUTHORITATIVE response language.
-    # We always respond in the session's language — not the language the user happened to type in.
-    # LID is run for informational/logging purposes only; it is used as a fallback ONLY when
-    # the session has no language set (i.e., session is brand new with no language_code).
-    requested_language = db_session.language_code or current_user.preferred_language or "en-IN"
-
-    try:
-        detected_language = await detect_language(original_text)
+    except HTTPException:
+        raise   # Intentional HTTP errors pass through unchanged
     except Exception as exc:
-        logger.warning("detect_language failed (non-fatal, falling back to session language): %s", exc)
-        detected_language = requested_language
-
-    logger.info(
-        "send_text_message: session_language=%s detected_language=%s (response will use session_language)",
-        requested_language, detected_language,
-    )
-
-    return await _process_and_respond(
-        session_id=session_id,
-        original_text=original_text,
-        # LANGUAGE FIX: use session's authoritative language for the response,
-        # NOT detected_language. This ensures Tamil session → Tamil response
-        # even when the user types their query in English.
-        session_language=requested_language,
-        detected_language=detected_language,
-        input_type="text",
-        db_session=db_session,
-        db=db,
-        current_user=current_user,
-    )
+        import traceback
+        tb = traceback.format_exc()
+        print(f"[send_text_message] UNHANDLED EXCEPTION: {type(exc).__name__}: {exc}\n{tb}", flush=True)
+        logger.exception("send_text_message UNHANDLED: %s", exc)
+        raise HTTPException(status_code=500, detail=f"Unexpected server error: {type(exc).__name__}: {exc}")
 
 
 @router.post("/{session_id}/messages/voice", response_model=ChatResponse)
@@ -273,68 +282,76 @@ async def send_voice_message(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    # DIAGNOSTIC: print() goes straight to stdout unbuffered
+    print(f"[send_voice_message] ENTRY session_id={session_id} user_id={current_user.id}", flush=True)
+
     t_entry = time.time()
     logger.info(
         "send_voice_message ENTRY — session_id=%s user_id=%s filename=%s",
         session_id, current_user.id, audio_file.filename,
     )
 
-    # Enforce guest limit BEFORE reading/processing audio
-    _enforce_guest_limit(current_user)
-
     try:
-        db_session = (
-            db.query(DBSession)
-            .filter(DBSession.id == session_id, DBSession.user_id == current_user.id)
-            .first()
+        # Enforce guest limit BEFORE reading/processing audio
+        _enforce_guest_limit(current_user)
+
+        try:
+            db_session = (
+                db.query(DBSession)
+                .filter(DBSession.id == session_id, DBSession.user_id == current_user.id)
+                .first()
+            )
+        except Exception as exc:
+            logger.exception(
+                "send_voice_message: DB error fetching session_id=%s user_id=%s: %s",
+                session_id, current_user.id, exc,
+            )
+            print(f"[send_voice_message] DB ERROR: {exc}", flush=True)
+            raise HTTPException(status_code=500, detail="Database error while loading session. Please try again.")
+
+        if not db_session:
+            raise HTTPException(status_code=404, detail="Session not found or not owned by user")
+
+        logger.info("send_voice_message: session found in %.3fs", time.time() - t_entry)
+
+        requested_language = db_session.language_code or current_user.preferred_language or "en-IN"
+
+        clean_audio_filename = os.path.basename(audio_file.filename or "audio.wav")
+        ext = os.path.splitext(clean_audio_filename)[1].lower().lstrip(".")
+        if ext not in {"wav", "mp3", "m4a", "webm", "ogg", "caf", "3gp"}:
+            raise HTTPException(status_code=400, detail="Only audio files (.wav, .mp3, .m4a, .webm, .ogg) are supported.")
+
+        audio_bytes = await audio_file.read()
+
+        t0 = time.time()
+        original_text = await transcribe_audio(audio_bytes, clean_audio_filename, requested_language)
+        logger.info("transcribe_audio took %.2fs", time.time() - t0)
+
+        if not original_text or not original_text.strip():
+            raise HTTPException(
+                status_code=400,
+                detail="Audio transcription returned empty text. Please speak clearly and try again."
+            )
+
+        return await _process_and_respond(
+            session_id=session_id,
+            original_text=original_text,
+            session_language=requested_language,
+            detected_language=requested_language,
+            input_type="voice",
+            db_session=db_session,
+            db=db,
+            current_user=current_user,
         )
+
+    except HTTPException:
+        raise   # Intentional HTTP errors pass through unchanged
     except Exception as exc:
-        logger.exception(
-            "send_voice_message: DB error fetching session_id=%s user_id=%s: %s",
-            session_id, current_user.id, exc,
-        )
-        raise HTTPException(status_code=500, detail="Database error while loading session. Please try again.")
-
-    if not db_session:
-        raise HTTPException(status_code=404, detail="Session not found or not owned by user")
-
-    logger.info("send_voice_message: session found in %.3fs", time.time() - t_entry)
-
-    # The session language is the authoritative language for voice — set when session was created
-    requested_language = db_session.language_code or current_user.preferred_language or "en-IN"
-
-    clean_audio_filename = os.path.basename(audio_file.filename or "audio.wav")
-    ext = os.path.splitext(clean_audio_filename)[1].lower().lstrip(".")
-    if ext not in {"wav", "mp3", "m4a", "webm", "ogg", "caf", "3gp"}:
-        raise HTTPException(status_code=400, detail="Only audio files (.wav, .mp3, .m4a, .webm, .ogg) are supported.")
-
-    audio_bytes = await audio_file.read()
-
-    # STT: transcribe regional audio to text in the original language.
-    # We do NOT run LID on the transcribed text because:
-    #   - If mode="translate", output is English → LID would detect "en-IN" and override session_language.
-    #   - If mode="transcribe", output is in the user's regional language → session_language is still authoritative.
-    # In both cases, we use requested_language (the session's language) as the confirmed session_language.
-    t0 = time.time()
-    original_text = await transcribe_audio(audio_bytes, clean_audio_filename, requested_language)
-    logger.info("transcribe_audio took %.2fs", time.time() - t0)
-
-    if not original_text or not original_text.strip():
-        raise HTTPException(
-            status_code=400,
-            detail="Audio transcription returned empty text. Please speak clearly and try again."
-        )
-
-    return await _process_and_respond(
-        session_id=session_id,
-        original_text=original_text,
-        session_language=requested_language,  # Session language — NOT LID on transcribed output
-        detected_language=requested_language,
-        input_type="voice",
-        db_session=db_session,
-        db=db,
-        current_user=current_user,
-    )
+        import traceback
+        tb = traceback.format_exc()
+        print(f"[send_voice_message] UNHANDLED EXCEPTION: {type(exc).__name__}: {exc}\n{tb}", flush=True)
+        logger.exception("send_voice_message UNHANDLED: %s", exc)
+        raise HTTPException(status_code=500, detail=f"Unexpected server error: {type(exc).__name__}: {exc}")
 
 
 @router.post("/{session_id}/messages/{message_id}/speak")

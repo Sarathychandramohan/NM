@@ -1,15 +1,49 @@
 import logging
+import sys
 import time
 
-from fastapi import FastAPI
+# ── CRITICAL: Configure root logger FIRST, before any other imports ──────────
+# Without this, all logger.info/warning/exception calls in app/* modules are
+# SILENTLY DROPPED because the root logger has no handlers. Uvicorn only
+# configures its own "uvicorn.*" loggers, not application loggers. This is why
+# Render logs show zero application output even though the code runs.
+logging.basicConfig(
+    level=logging.INFO,
+    stream=sys.stderr,        # stderr is unbuffered — guaranteed to flush immediately
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    force=True,               # Override any existing (empty) config from uvicorn
+)
+# ─────────────────────────────────────────────────────────────────────────────
+
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.config import ensure_storage_dirs, settings
 from app.routers import auth, chat, complaints, documents, files, helplines, sessions
 
 logger = logging.getLogger(__name__)
+logger.info("main.py: logging is now configured — this line proves it")
 
 app = FastAPI(title="NeethiMitra AI Backend")
+
+# ── Global exception handler ─────────────────────────────────────────────────
+# Catches any unhandled exception that wasn't caught inside a route handler.
+# This fires AFTER the route handler and logs a full traceback so nothing
+# can fail silently again.
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    import traceback
+    tb = traceback.format_exc()
+    print(f"[GLOBAL EXCEPTION HANDLER] {request.method} {request.url.path} → {type(exc).__name__}: {exc}\n{tb}", flush=True)
+    logger.exception(
+        "UNHANDLED EXCEPTION: %s %s → %s: %s",
+        request.method, request.url.path, type(exc).__name__, exc,
+    )
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"Internal server error: {type(exc).__name__}: {exc}"},
+    )
 
 app.add_middleware(
     CORSMiddleware,
@@ -45,20 +79,10 @@ def health():
 @app.get("/api/debug/sarvam-test")
 async def sarvam_isolation_test():
     """
-    TASK 2 — Sarvam connectivity isolation test.
-
+    Sarvam connectivity isolation test.
     Calls the Sarvam LLM directly with a hardcoded test query — NO auth,
-    NO database, NO session logic. Use this to verify:
-      1. SARVAM_API_KEY is valid and set correctly in Render env vars
-      2. The Sarvam API is reachable from the Render instance
-      3. The chat/completions endpoint returns a real response
-
-    This endpoint is intentionally LEFT ACTIVE in production as a safe
-    monitoring/debugging tool — it only reads SARVAM_API_KEY from env vars
-    and makes one outbound HTTP call. It does not expose user data or DB.
-    It is rate-limit-safe (single call per hit).
-
-    To disable in production, set the DISABLE_DEBUG_ROUTES env var to "true".
+    NO database, NO session logic. Verifies API key, network reachability,
+    and that the sarvam-30b model is accepted.
     """
     import os
     if os.environ.get("DISABLE_DEBUG_ROUTES", "").lower() == "true":
@@ -69,6 +93,7 @@ async def sarvam_isolation_test():
 
     t_start = time.time()
     logger.info("sarvam_isolation_test: starting direct Sarvam call")
+    print("sarvam_isolation_test: starting", flush=True)
 
     try:
         resolved_category, response_text = await get_legal_response(

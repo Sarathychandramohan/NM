@@ -22,6 +22,13 @@ services:
       - key: ENVIRONMENT
         value: production
 
+      # -- Python output buffering (CRITICAL for log visibility on Render) ----
+      # Without this, Python's stdout is block-buffered and print() calls
+      # never appear in Render's log viewer. stderr is unbuffered by default
+      # but print() goes to stdout. Setting this ensures both are unbuffered.
+      - key: PYTHONUNBUFFERED
+        value: "1"
+
       # -- Database (auto-linked from Render Postgres below) ------------------
       - key: DATABASE_URL
         fromDatabase:

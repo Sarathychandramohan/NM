@@ -36,12 +36,22 @@ def _validate_upload(file: UploadFile, file_size_bytes: int) -> None:
     if ext not in {"pdf", "png", "jpg", "jpeg"}:
         raise HTTPException(status_code=400, detail="Only PDF, PNG, and JPEG file extensions are allowed.")
 
+    # Standardise MIME type for client requests sending generic or missing headers (e.g. from mobile file pickers)
+    if not file.content_type or file.content_type in ("application/octet-stream", "application/x-download", "unknown"):
+        if ext == "pdf":
+            file.content_type = "application/pdf"
+        elif ext in ("jpg", "jpeg"):
+            file.content_type = "image/jpeg"
+        elif ext == "png":
+            file.content_type = "image/png"
+
     if file.content_type not in ALLOWED_DOCUMENT_TYPES:
-        raise HTTPException(status_code=400, detail="Only PDF, PNG, and JPEG uploads are supported")
+        raise HTTPException(status_code=400, detail=f"Only PDF, PNG, and JPEG uploads are supported. Detected: {file.content_type}")
 
     max_size = settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
     if file_size_bytes > max_size:
         raise HTTPException(status_code=413, detail=f"File exceeds {settings.MAX_UPLOAD_SIZE_MB} MB limit")
+
 
 
 async def _process_document_async(

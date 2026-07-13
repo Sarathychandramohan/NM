@@ -131,6 +131,7 @@ interface AppState {
   sendVoiceRecording: (audioUri: string) => Promise<void>;  // BUG-F007 support
   clearActiveSession: () => void;
   loadSession: (sessionId: string) => Promise<void>;
+  deleteSession: (sessionId: string) => Promise<void>;
   generateMessageAudio: (messageId: string) => Promise<string | undefined>;
 
   // PDF Generation
@@ -344,6 +345,28 @@ export const useAppStore = create<AppState>()(
           }
         } catch (err) {
           console.warn('loadSession: failed:', safeLogVal(err));
+        }
+      },
+
+      deleteSession: async (sessionId) => {
+        const { authToken } = get();
+        // Optimistically remove session from local state for snappy UI
+        set((s) => {
+          const updatedSessions = s.sessions.filter((sess) => sess.id !== sessionId);
+          const nextActive = s.activeSession?.id === sessionId ? null : s.activeSession;
+          return {
+            sessions: updatedSessions,
+            activeSession: nextActive,
+          };
+        });
+        if (!authToken) return;
+        try {
+          await apiClient(`/api/sessions/${sessionId}`, {
+            method: 'DELETE',
+            headers: authHeaders(authToken),
+          });
+        } catch (err) {
+          console.warn('deleteSession: backend request failed:', safeLogVal(err));
         }
       },
 

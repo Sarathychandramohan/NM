@@ -8,7 +8,7 @@ import { TopAppBar } from '@/components/ui/TopAppBar';
 import { UI_TRANSLATIONS } from '@constants/translations';
 import {
   Clock, Home, Briefcase, ShieldAlert,
-  User, Heart, Scale, MessageSquare, ChevronRight,
+  User, Heart, Scale, MessageSquare, ChevronRight, Trash2,
 } from 'lucide-react-native';
 
 const CATEGORY_ICONS: Record<string, { Icon: any; color: string }> = {
@@ -26,7 +26,7 @@ function fmtTime(d: Date): string {
 }
 
 export default function HistoryScreen() {
-  const { isDarkMode, sessions, loadSession, selectedLanguage, textSize, isAnonymousGuest, setOverlay } = useAppStore();
+  const { isDarkMode, sessions, loadSession, deleteSession, selectedLanguage, textSize, isAnonymousGuest, setOverlay } = useAppStore();
   const C      = isDarkMode ? Colors.dark : Colors.light;
   const router = useRouter();
   const scale = getTextScale(textSize);
@@ -149,6 +149,15 @@ export default function HistoryScreen() {
                           {fmtTime(session.startedAt)} · {session.messages.length} {t.msgs}
                         </Text>
                       </View>
+                      <TouchableOpacity
+                        onPress={async () => {
+                          await deleteSession(session.id);
+                        }}
+                        style={{ padding: 6, marginRight: 4 }}
+                        activeOpacity={0.7}
+                      >
+                        <Trash2 size={16} color="#EF4444" strokeWidth={1.8} />
+                      </TouchableOpacity>
                       <ChevronRight size={16} color={C.textHint} strokeWidth={1.5} />
                     </View>
                     {lastMsg && (

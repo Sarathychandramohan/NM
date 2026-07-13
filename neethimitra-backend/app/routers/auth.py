@@ -18,6 +18,7 @@ NOTE-MANUAL: Set GOOGLE_CLIENT_ID in .env for real Google OAuth.
 """
 
 import logging
+import os
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -33,7 +34,7 @@ from app.core.security import (
     verify_password,
 )
 from app.database import get_db
-from app.models import AuthSession, Document, RefreshToken, Session as ChatSession, User
+from app.models import AuthSession, Document, RefreshToken, Session as ChatSession, User, Complaint
 from app.schemas import (
     AvatarUpdateRequest,
     FullUserResponse,
@@ -451,5 +452,46 @@ def delete_me(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_real_user),
 ):
+    user_id = current_user.id
+    logger.info("delete_me: starting deletion process for user_id=%d", user_id)
+
+    # 1. Query and delete physical document uploads from disk
+    try:
+        docs = db.query(Document).filter(Document.user_id == user_id).all()
+        logger.info("delete_me: found %d document records to purge", len(docs))
+        for doc in docs:
+            if doc.file_path:
+                filename = os.path.basename(doc.file_path)
+                full_path = os.path.abspath(os.path.join(settings.UPLOAD_DIR, filename))
+                if os.path.exists(full_path) and os.path.isfile(full_path):
+                    try:
+                        os.remove(full_path)
+                        logger.info("delete_me: physically deleted doc file %s", full_path)
+                    except Exception as e:
+                        logger.error("delete_me: error removing doc file %s: %s", full_path, e)
+    except Exception as exc:
+        logger.error("delete_me: error querying user documents: %s", exc)
+
+    # 2. Query and delete physical complaint PDFs from disk
+    try:
+        complaints = db.query(Complaint).join(ChatSession).filter(ChatSession.user_id == user_id).all()
+        logger.info("delete_me: found %d complaint records to purge", len(complaints))
+        for comp in complaints:
+            for path_attr in ("pdf_path", "final_pdf_path"):
+                path_val = getattr(comp, path_attr, None)
+                if path_val:
+                    filename = os.path.basename(path_val)
+                    full_path = os.path.abspath(os.path.join(settings.PDF_DIR, filename))
+                    if os.path.exists(full_path) and os.path.isfile(full_path):
+                        try:
+                            os.remove(full_path)
+                            logger.info("delete_me: physically deleted complaint PDF %s", full_path)
+                        except Exception as e:
+                            logger.error("delete_me: error removing complaint PDF %s: %s", full_path, e)
+    except Exception as exc:
+        logger.error("delete_me: error querying user complaints: %s", exc)
+
+    # 3. Perform database cascade deletion
     db.delete(current_user)
     db.commit()
+    logger.info("delete_me: user_id=%d and all database rows purged successfully", user_id)

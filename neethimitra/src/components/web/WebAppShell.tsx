@@ -22,7 +22,7 @@ import {
   Home, Clock, FolderClosed, User, Mic,
   Globe, LogOut, ChevronRight, ChevronLeft, ChevronDown, Check, Plus,
   Home as HomeIcon, Briefcase, ShieldAlert, Heart, Scale, MessageSquare,
-  ArrowLeft, Search,
+  ArrowLeft, Search, Trash2,
 } from 'lucide-react-native';
 
 const SIDEBAR_FULL = 280;
@@ -262,7 +262,7 @@ function WebSidebar({
 }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { isDarkMode, setOverlay, startSession, sessions, loadSession, logout, userName, userEmail, selectedLanguage } = useAppStore();
+  const { isDarkMode, setOverlay, startSession, sessions, loadSession, deleteSession, logout, userName, userEmail, selectedLanguage } = useAppStore();
   const C = isDarkMode ? Colors.dark : Colors.light;
   const t = UI_TRANSLATIONS[selectedLanguage.code] || UI_TRANSLATIONS['en-IN'];
 
@@ -561,19 +561,39 @@ function WebSidebar({
                       const lastMsg = sess.messages[sess.messages.length - 1];
                       const preview = lastMsg ? lastMsg.text.slice(0, 40) + (lastMsg.text.length > 40 ? '…' : '') : 'Empty session';
                       return (
-                        <TouchableOpacity
+                        <View
                           key={sess.id}
-                          onPress={() => handleResumeSession(sess.id, cat.id)}
-                          activeOpacity={0.75}
                           style={[
                             styles.sidebarSessionItem,
-                            { borderLeftColor: catColor, backgroundColor: isDarkMode ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)' },
+                            {
+                              borderLeftColor: catColor,
+                              backgroundColor: isDarkMode ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              paddingRight: 6,
+                            },
                           ]}
                         >
-                          <Text style={[styles.sidebarSessionText, { color: C.textSecondary }]} numberOfLines={1}>
-                            {preview}
-                          </Text>
-                        </TouchableOpacity>
+                          <TouchableOpacity
+                            onPress={() => handleResumeSession(sess.id, cat.id)}
+                            activeOpacity={0.75}
+                            style={{ flex: 1, paddingVertical: 6 }}
+                          >
+                            <Text style={[styles.sidebarSessionText, { color: C.textSecondary }]} numberOfLines={1}>
+                              {preview}
+                            </Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            onPress={async () => {
+                              await deleteSession(sess.id);
+                            }}
+                            style={{ padding: 4 }}
+                            activeOpacity={0.7}
+                          >
+                            <Trash2 size={12} color="#EF4444" />
+                          </TouchableOpacity>
+                        </View>
                       );
                     })}
                   </View>

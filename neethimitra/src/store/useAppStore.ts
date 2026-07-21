@@ -825,11 +825,24 @@ export const useAppStore = create<AppState>()(
 
         try {
           const formData = new FormData();
-          // Pass the correctly inferred mimeType — never pass the raw `type` arg from expo picker
-          formData.append('file', { uri, type: mimeType, name: filename } as any);
+
+          if (Platform.OS === 'web') {
+            // On web: fetch() requires a real Blob/File in FormData — a plain object
+            // gets serialized as "[object Object]" causing FastAPI 422 rejection.
+            const fileResponse = await fetch(uri);
+            const blob = await fileResponse.blob();
+            const file = new File([blob], filename, { type: mimeType });
+            formData.append('file', file);
+          } else {
+            // On React Native: the fetch polyfill supports {uri, type, name} directly.
+            // This is the standard RN pattern for file uploads.
+            formData.append('file', { uri, type: mimeType, name: filename } as any);
+          }
 
           const uploadHeaders: Record<string, string> = {};
           if (authToken) uploadHeaders['Authorization'] = `Bearer ${authToken}`;
+          // NOTE: do NOT set Content-Type here — fetch sets it automatically with the
+          // multipart boundary when body is FormData.
 
           const apiResponse = await apiClient(`/api/sessions/${sessionId}/documents`, {
             method: 'POST',

@@ -83,7 +83,9 @@ async def _start_job(client: httpx.AsyncClient, job_id: str) -> None:
     response = await client.post(
         f"{SARVAM_BASE}/doc-digitization/job/v1/{job_id}/start",
         headers=_headers(),
-        json={"output_format": "md"},
+        # IMPORTANT: output_format MUST be nested inside job_parameters.
+        # Sending {"output_format": "md"} at root level returns 400 from Sarvam API.
+        json={"job_parameters": {"output_format": "md"}},
         timeout=15.0,
     )
     response.raise_for_status()
@@ -179,6 +181,7 @@ async def extract_text_from_document(file_bytes: bytes, filename: str, mime_type
     async with httpx.AsyncClient() as client:
         try:
             job_id = await _create_job(client)
+            logger.info("extract_text_from_document: job_id=%s filename=%s mime=%s", job_id, filename, mime_type)
             presigned_upload_url = await _get_upload_url(client, job_id, filename, file_type)
             await _upload_file_to_url(client, presigned_upload_url, file_bytes, mime_type)
             await _start_job(client, job_id)
@@ -188,8 +191,22 @@ async def extract_text_from_document(file_bytes: bytes, filename: str, mime_type
                 return "[Sarvam Vision: Job completed but no output files were returned.]"
 
             download_url = await _get_download_url(client, job_id, output_files[0])
-            return await _download_markdown(client, download_url)
+            text = await _download_markdown(client, download_url)
+            logger.info("extract_text_from_document: success — extracted %d chars", len(text))
+            return text
 
+        except httpx.HTTPStatusError as exc:
+            # Log the full response body so we know exactly what Sarvam returned
+            body = exc.response.text[:500] if exc.response else "no body"
+            logger.error(
+                "extract_text_from_document: HTTP %s from Sarvam — URL=%s body=%s",
+                exc.response.status_code if exc.response else "?",
+                str(exc.request.url)[:120],
+                body,
+            )
+            raise RuntimeError(
+                f"Sarvam Vision API error {exc.response.status_code if exc.response else '?'}: {body}"
+            ) from exc
         except RuntimeError:
             raise  # already correct type — re-raise as-is
         except Exception as exc:

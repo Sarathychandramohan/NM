@@ -5,11 +5,11 @@ import {
   Alert, ScrollView,
 } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
+import { AudioPlayerModal } from '@/components/overlays/AudioPlayerModal';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Colors } from '@constants/colors';
 import { useAppStore, CATEGORIES, Message, getTextScale } from '@store/useAppStore';
-import { useAudioPlayer } from 'expo-audio';
 import { UI_TRANSLATIONS } from '@constants/translations';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ChatHistorySidebar } from '@/components/ui/ChatHistorySidebar';
@@ -112,7 +112,7 @@ function MessageBubble({
   C: any;
   scale: number;
   t: any;
-  playResponseAudio: (messageId: string, uri?: string) => void;
+  playResponseAudio: (messageId: string, uri?: string, messageText?: string) => void;
   loadingAudioId: string | null;
   systemLangCode: string;
 }) {
@@ -134,14 +134,22 @@ function MessageBubble({
   const isEnglishSession = systemLangCode === 'en-IN';
 
   // What to show in the translation panel when expanded
+  // Backend stores: text_content = regional text, english_translation = English text
+  // Translate button toggles between them
   const translationText = item.englishTranslation ?? '';
 
-  // Show translate button only when there is meaningful translation text
-  // and the session is not already in English
-  const hasTranslation = !!translationText && !isEnglishSession;
+  // Show translate button only when:
+  // 1. There IS a translation (not empty)
+  // 2. Session is not already in English (nothing to translate to/from)
+  // 3. Translation text DIFFERS from primary text (avoids duplicate display when user typed in English)
+  const hasTranslation = (
+    !!translationText &&
+    !isEnglishSession &&
+    translationText.trim() !== item.text.trim()
+  );
 
-  // Button label: shows target language direction
-  const translateLabel   = showTranslation ? 'Show Original' : '⇄ Translate';
+  // Button label: shows the direction (original = regional language)
+  const translateLabel = showTranslation ? 'Show Original' : '⇄ English';
 
   return (
     <View style={[styles.msgRow, isUser ? styles.msgRowUser : styles.msgRowAI]}>
@@ -258,13 +266,13 @@ function MessageBubble({
 
             {/* Voice speak helper */}
             <TouchableOpacity
-              onPress={() => playResponseAudio(item.id, item.audioUri)}
+              onPress={() => playResponseAudio(item.id, item.audioUri, item.text)}
               style={[styles.speakBtn, { borderColor: Colors.orange + '40', marginTop: 0 }]}
               disabled={loadingAudioId === item.id}
             >
               <Volume2 size={12} color={Colors.orange} strokeWidth={2} />
               <Text style={[styles.speakBtnText, { color: Colors.orange, fontSize: 11 * scale }]}>
-                {loadingAudioId === item.id ? 'Generating...' : (item.audioUri ? t.play : 'Speak')}
+                {loadingAudioId === item.id ? 'Generating...' : (item.audioUri ? '▶ Play' : 'Speak')}
               </Text>
             </TouchableOpacity>
           </View>
@@ -286,7 +294,6 @@ export default function ChatScreen() {
     generateMessageAudio, authToken,
   } = useAppStore();
 
-  const player = Platform.OS !== 'web' ? useAudioPlayer(null) : null;
   const C = isDarkMode ? Colors.dark : Colors.light;
   const t = UI_TRANSLATIONS[selectedLanguage.code] || UI_TRANSLATIONS['en-IN'];
   const scale = getTextScale(textSize);
@@ -294,7 +301,10 @@ export default function ChatScreen() {
   const [inputText, setInputText]       = useState('');
   const [showKeyboard, setShowKeyboard] = useState(false);
   const [showHistory, setShowHistory]   = useState(false);
-  const [loadingAudioId, setLoadingAudioId] = useState<string | null>(null);
+  // Audio player modal state
+  const [audioModal, setAudioModal] = useState<{ visible: boolean; uri: string | null; title?: string }>(
+    { visible: false, uri: null, title: undefined }
+  );
   const isWeb = Platform.OS === 'web';
   const typingDots = useRef(new Animated.Value(0)).current;
 
@@ -412,37 +422,47 @@ export default function ChatScreen() {
     setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 250);
   };
 
-  const playResponseAudio = async (messageId: string, audioUri?: string) => {
+  const [loadingAudioId, setLoadingAudioId] = useState<string | null>(null);
+
+  const openAudioPlayer = async (messageId: string, audioUri?: string, messageText?: string) => {
+    safeImpact(Haptics.ImpactFeedbackStyle.Medium);
     let targetUri = audioUri;
+
     if (!targetUri) {
-      safeImpact(Haptics.ImpactFeedbackStyle.Medium);
+      // No cached audio — generate via backend /speak endpoint
       setLoadingAudioId(messageId);
       try {
         const generated = await generateMessageAudio(messageId);
-        if (generated) {
-          targetUri = generated;
-        } else {
-          setLoadingAudioId(null);
-          return;
-        }
+        targetUri = generated ?? undefined;
       } catch {
         setLoadingAudioId(null);
+        showAlert('Audio Error', 'Failed to generate audio. Please try again.');
         return;
       }
       setLoadingAudioId(null);
     }
 
-    safeImpact(Haptics.ImpactFeedbackStyle.Light);
-    try {
-      if (Platform.OS === 'web') {
+    if (!targetUri) {
+      showAlert('Audio Error', 'No audio available for this message.');
+      return;
+    }
+
+    // On web: use native <audio> element (expo-audio doesn't work on web)
+    if (Platform.OS === 'web') {
+      try {
         const a = new (window as any).Audio(targetUri);
         a.play();
-      } else {
-        player?.replace(targetUri);
-        player?.play();
-      }
-    } catch { /* silent */ }
+      } catch { /* silent */ }
+      return;
+    }
+
+    // On native: open full player modal
+    setAudioModal({ visible: true, uri: targetUri, title: messageText?.slice(0, 80) });
   };
+
+  // Alias for backward compat with MessageBubble prop name
+  const playResponseAudio = openAudioPlayer;
+
 
   const showAlert = (title: string, msg: string) => {
     if (Platform.OS === 'web') {
@@ -855,6 +875,17 @@ export default function ChatScreen() {
         onPickImage={handlePickImage}
         onPickDocument={handlePickDocument}
       />
+
+      {/* ── Audio player modal — opens when user taps Speak ────────── */}
+      {!isWeb && (
+        <AudioPlayerModal
+          visible={audioModal.visible}
+          audioUri={audioModal.uri}
+          title={audioModal.title}
+          isDarkMode={isDarkMode}
+          onClose={() => setAudioModal({ visible: false, uri: null, title: undefined })}
+        />
+      )}
     </SafeAreaView>
   );
 

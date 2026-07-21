@@ -103,6 +103,17 @@ export type UploadedDoc = {
   sessionId?: string;
 };
 
+export type Helpline = {
+  id: number;
+  category: string;
+  name: string;
+  number: string;
+  availableHours?: string;
+  isNational: boolean;
+  state?: string;
+  priority: number;
+};
+
 // ─── Web SecureStore Polyfill ──────────────────────────────────────────────
 const webSecureStore = {
   getItemAsync: async (key: string) => {
@@ -173,6 +184,10 @@ interface AppState {
   documentReadyInfo: { docName: string; sessionId: string; categoryId: string } | null;
   clearDocumentReady: () => void;
 
+  // Helplines
+  helplines: Helpline[];
+  fetchHelplines: () => Promise<void>;
+
   // Mic
   isListening: boolean;
   setListening: (val: boolean) => void;
@@ -204,6 +219,7 @@ interface AppState {
   logout: () => Promise<void>;
   enableGuest: () => Promise<void>;
   decrementQueries: () => Promise<void>;
+  updateProfile: (name: string) => Promise<void>;  // PATCH /api/auth/me
 
   // Overlays
   activeOverlay: 'recording' | 'language' | 'upload' | 'success' | 'error' | 'confirm' | 'login_prompt' | 'confirm_logout' | null;
@@ -951,6 +967,36 @@ export const useAppStore = create<AppState>()(
         }
       },
 
+      // ── Helplines ─────────────────────────────────────────────────────
+      helplines: [],
+
+      fetchHelplines: async () => {
+        // Use cached data if already loaded
+        if (get().helplines.length > 0) return;
+        try {
+          const { authToken } = get();
+          const headers: Record<string, string> = {};
+          if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+          const response = await apiClient('/api/helplines?national_only=true', { headers });
+          if (response.ok) {
+            const data: any[] = await response.json();
+            const mapped: Helpline[] = data.map((h) => ({
+              id: h.id,
+              category: h.category,
+              name: h.name,
+              number: h.number,
+              availableHours: h.available_hours ?? undefined,
+              isNational: h.is_national ?? true,
+              state: h.state ?? undefined,
+              priority: h.priority ?? 5,
+            }));
+            set({ helplines: mapped });
+          }
+        } catch (err) {
+          console.warn('fetchHelplines: failed:', safeLogVal(err));
+        }
+      },
+
       clearActiveSession: () => set({ activeSession: null }),
 
       // ── Mic ──────────────────────────────────────────────────────────
@@ -1190,6 +1236,25 @@ export const useAppStore = create<AppState>()(
           documents: [],
           activeSession: null,
         });
+      },
+
+      updateProfile: async (name: string) => {
+        const { authToken } = get();
+        if (!authToken) throw new Error('Not authenticated');
+        const trimmed = name.trim();
+        if (!trimmed) throw new Error('Name cannot be empty');
+        const response = await apiClient('/api/auth/me', {
+          method: 'PATCH',
+          headers: authHeaders(authToken),
+          body: JSON.stringify({ name: trimmed }),
+        });
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({}));
+          throw new Error(body.detail ?? 'Profile update failed');
+        }
+        // Persist to SecureStore so checkAuthStatus picks it up after app restart
+        await webSecureStore.setItemAsync('user_name', trimmed);
+        set({ userName: trimmed });
       },
 
       enableGuest: async () => {

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  ScrollView, Switch, Alert, Platform,
+  ScrollView, Switch, Alert, Platform, TextInput, ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors } from '@constants/colors';
@@ -13,17 +13,21 @@ import { useRouter } from 'expo-router';
 import { UI_TRANSLATIONS } from '@constants/translations';
 import {
   Sun, Moon, Globe, Info, Shield, Scale,
-  LogOut, Trash2, ChevronRight, User, Type,
+  LogOut, Trash2, ChevronRight, User, Type, Pencil, Check, X,
 } from 'lucide-react-native';
 
 export default function ProfileScreen() {
   const router = useRouter();
   const {
     isDarkMode, toggleDarkMode, selectedLanguage, sessions, logout,
-    setOverlay, userName, userEmail, textSize, setTextSize
+    setOverlay, userName, userEmail, textSize, setTextSize, isAnonymousGuest,
+    updateProfile,
   } = useAppStore();
   const C = isDarkMode ? Colors.dark : Colors.light;
   const [confirmType, setConfirmType] = useState<'delete' | null>(null);
+  const [editingName, setEditingName] = useState(false);
+  const [nameInput, setNameInput] = useState('');
+  const [savingName, setSavingName] = useState(false);
 
   const t = UI_TRANSLATIONS[selectedLanguage.code] || UI_TRANSLATIONS['en-IN'];
   const scale = getTextScale(textSize);
@@ -32,6 +36,20 @@ export default function ProfileScreen() {
   const displayName   = userName || 'Guest Citizen';
   const displayPhone  = userEmail ? userEmail : 'Not logged in';
   const avatarInitial = displayName.charAt(0).toUpperCase();
+
+  const handleSaveName = async () => {
+    if (!nameInput.trim()) return;
+    setSavingName(true);
+    try {
+      await updateProfile(nameInput.trim());
+      setEditingName(false);
+    } catch (err: any) {
+      if (Platform.OS === 'web') alert(err.message);
+      else Alert.alert('Update failed', err.message);
+    } finally {
+      setSavingName(false);
+    }
+  };
 
   const showAlert = (title: string, msg: string) => {
     if (Platform.OS === 'web') {
@@ -161,7 +179,56 @@ export default function ProfileScreen() {
           <View style={[styles.avatar, { backgroundColor: isDarkMode ? '#1E1E23' : '#FFF7ED', borderColor: Colors.orange + '40' }]}>
             <Text style={[styles.avatarInitial, { color: Colors.orange }]}>{avatarInitial}</Text>
           </View>
-          <Text style={[styles.userName, { color: C.text, fontSize: 20 * scale }]} numberOfLines={1}>{displayName}</Text>
+
+          {/* Editable name row */}
+          {editingName ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+              <TextInput
+                value={nameInput}
+                onChangeText={setNameInput}
+                autoFocus
+                style={[
+                  styles.nameInput,
+                  {
+                    color: C.text,
+                    borderColor: Colors.orange,
+                    backgroundColor: isDarkMode ? '#1E1E23' : '#FFF7ED',
+                    fontSize: 18 * scale,
+                  },
+                ]}
+                placeholder="Enter your name"
+                placeholderTextColor={C.textHint}
+                maxLength={60}
+              />
+              {savingName ? (
+                <ActivityIndicator size="small" color={Colors.orange} />
+              ) : (
+                <>
+                  <TouchableOpacity onPress={handleSaveName} style={styles.nameActionBtn}>
+                    <Check size={18} color={Colors.green} strokeWidth={2.5} />
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => setEditingName(false)} style={styles.nameActionBtn}>
+                    <X size={18} color='#EF4444' strokeWidth={2.5} />
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
+          ) : (
+            <TouchableOpacity
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}
+              onPress={() => {
+                if (!isAnonymousGuest) {
+                  setNameInput(userName || '');
+                  setEditingName(true);
+                }
+              }}
+              activeOpacity={isAnonymousGuest ? 1 : 0.7}
+            >
+              <Text style={[styles.userName, { color: C.text, fontSize: 20 * scale }]} numberOfLines={1}>{displayName}</Text>
+              {!isAnonymousGuest && <Pencil size={14} color={C.textSecondary} strokeWidth={1.8} />}
+            </TouchableOpacity>
+          )}
+
           <Text style={[styles.userMeta, { color: C.textSecondary, fontSize: 13 * scale }]}>
             {displayPhone} · NeethiMitra AI
           </Text>
@@ -259,6 +326,16 @@ const styles = StyleSheet.create({
   },
   userName: { fontSize: 20, fontFamily: 'PlusJakartaSans_700Bold' },
   userMeta: { fontSize: 13, fontFamily: 'PlusJakartaSans_400Regular', marginTop: 4 },
+
+  nameInput: {
+    flex: 1, borderWidth: 1.5, borderRadius: 10,
+    paddingHorizontal: 10, paddingVertical: 6,
+    fontFamily: 'PlusJakartaSans_700Bold',
+  },
+  nameActionBtn: {
+    width: 32, height: 32, borderRadius: 16,
+    alignItems: 'center', justifyContent: 'center',
+  },
 
   statsRow: { flexDirection: 'row', gap: 10, paddingHorizontal: 16, marginBottom: 20 },
   statCard: {

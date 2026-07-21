@@ -1,6 +1,7 @@
 import logging
 import sys
 import time
+from contextlib import asynccontextmanager
 
 # ── CRITICAL: Configure root logger FIRST, before any other imports ──────────
 # Without this, all logger.info/warning/exception calls in app/* modules are
@@ -21,11 +22,29 @@ from fastapi.responses import JSONResponse
 
 from app.config import ensure_storage_dirs, settings
 from app.routers import auth, chat, complaints, documents, files, helplines, sessions
+from app.database import SessionLocal
+from app.services.helpline_seeder import seed_helplines
 
 logger = logging.getLogger(__name__)
 logger.info("main.py: logging is now configured — this line proves it")
 
-app = FastAPI(title="NeethiMitra AI Backend")
+
+@asynccontextmanager
+async def lifespan(app_instance):
+    """Startup/shutdown tasks run once on cold start."""
+    # Seed national helplines so the helplines page is never empty
+    try:
+        db = SessionLocal()
+        seed_helplines(db)
+        db.close()
+        logger.info("lifespan: helpline seeder completed")
+    except Exception as exc:
+        logger.error("lifespan: helpline seeder failed (non-fatal): %s", exc)
+    yield
+    # (shutdown tasks go here if needed)
+
+
+app = FastAPI(title="NeethiMitra AI Backend", lifespan=lifespan)
 
 # ── Global exception handler ─────────────────────────────────────────────────
 # Catches any unhandled exception that wasn't caught inside a route handler.

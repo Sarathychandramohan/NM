@@ -2,8 +2,9 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, FlatList,
   TextInput, KeyboardAvoidingView, Platform, Animated,
-  Linking, Alert, ScrollView,
+  Alert, ScrollView,
 } from 'react-native';
+import * as WebBrowser from 'expo-web-browser';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Colors } from '@constants/colors';
@@ -454,9 +455,18 @@ export default function ChatScreen() {
   const openProtectedPdf = async () => {
     if (!pdfUrl) return;
     if (Platform.OS !== 'web') {
-      Linking.openURL(pdfUrl);
+      // On native, open in the in-app browser — works for all Android/iOS
+      // even when no dedicated PDF app is installed (unlike Linking.openURL)
+      try {
+        await WebBrowser.openBrowserAsync(pdfUrl);
+      } catch {
+        // fallback: direct Linking if WebBrowser is somehow unavailable
+        const { Linking } = await import('react-native');
+        Linking.openURL(pdfUrl);
+      }
       return;
     }
+    // On web: fetch with auth token and open as blob URL
     try {
       const response = await fetch(pdfUrl, {
         headers: authToken ? { Authorization: `Bearer ${authToken}` } : undefined,
@@ -532,6 +542,8 @@ export default function ChatScreen() {
       if (url) { setPdfUrl(url); setOverlay('success'); }
       else showAlert(t.draftingError, t.describeIssue);
     } else if (action === 'helpline') {
+      // tel: links need Linking — WebBrowser doesn't handle phone calls
+      const { Linking } = require('react-native');
       Linking.openURL(`tel:${HELPLINE_MAP[category.id] ?? '112'}`);
     } else if (action === 'upload') {
       setOverlay('upload');

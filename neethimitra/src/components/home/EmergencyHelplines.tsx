@@ -1,12 +1,13 @@
 import React, { useEffect } from 'react';
 import { View, Text, TouchableOpacity, Linking, Platform } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Phone, ArrowRight } from 'lucide-react-native';
+import { Phone, ArrowRight, ChevronRight } from 'lucide-react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming, withSequence } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import { Colors } from '@constants/colors';
 import { useAppStore, getTextScale } from '@store/useAppStore';
 import { UI_TRANSLATIONS } from '@constants/translations';
+import { useRouter } from 'expo-router';
 
 const HELPLINES = [
   {
@@ -40,6 +41,8 @@ export function EmergencyHelplines() {
   const t = UI_TRANSLATIONS[selectedLanguage.code] || UI_TRANSLATIONS['en-IN'];
   const scale = getTextScale(textSize);
   const pulseOpacity = useSharedValue(0.4);
+  const router = useRouter();
+  const isWeb = Platform.OS === 'web';
 
   useEffect(() => {
     pulseOpacity.value = withRepeat(
@@ -56,7 +59,6 @@ export function EmergencyHelplines() {
     opacity: pulseOpacity.value,
   }));
 
-  const isWeb = Platform.OS === 'web';
 
   const handleCall = async (number: string) => {
     if (isWeb) return;
@@ -70,10 +72,22 @@ export function EmergencyHelplines() {
 
   return (
     <View className="mb-6">
-      <Text className="text-[12px] font-jakarta font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-widest mb-3" style={{ fontSize: 12 * scale }}>
-        {t.emergencyHelplines}
-      </Text>
-      
+      {/* Header row with See All button */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+        <Text className="text-[12px] font-jakarta font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-widest" style={{ fontSize: 12 * scale }}>
+          {t.emergencyHelplines}
+        </Text>
+        {!isWeb && (
+          <TouchableOpacity
+            onPress={() => router.push('/helplines' as any)}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}
+            activeOpacity={0.7}
+          >
+            <Text style={{ color: Colors.orange, fontSize: 12 * scale, fontFamily: 'PlusJakartaSans_600SemiBold' }}>See All</Text>
+            <ChevronRight size={13} color={Colors.orange} strokeWidth={2} />
+          </TouchableOpacity>
+        )}
+      </View>
       <View className="flex-row flex-wrap justify-between gap-y-2.5">
         {HELPLINES.map((line) => {
           const helplineLabel = t[line.id] ?? line.label;

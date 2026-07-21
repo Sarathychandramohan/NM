@@ -169,6 +169,9 @@ interface AppState {
   documents: UploadedDoc[];
   uploadDocument: (uri: string, filename: string, type: string) => Promise<void>;
   fetchUserDocuments: () => Promise<void>;
+  // Set when a document finishes processing and a new chat session is ready
+  documentReadyInfo: { docName: string; sessionId: string; categoryId: string } | null;
+  clearDocumentReady: () => void;
 
   // Mic
   isListening: boolean;
@@ -745,11 +748,28 @@ export const useAppStore = create<AppState>()(
       },
 
       documents: [],
+      documentReadyInfo: null,
+      clearDocumentReady: () => set({ documentReadyInfo: null }),
 
       uploadDocument: async (uri, filename, type) => {
         const { activeSession, authToken } = get();
         let sessionId = activeSession ? activeSession.id : null;
         
+        // ── Robust MIME type inference from file extension ──
+        // Do NOT trust the `type` arg from expo-document-picker on Android —
+        // it often passes 'Document' or 'application/octet-stream' for PDFs.
+        // Always re-derive from the filename extension first.
+        function inferMime(fname: string, fallback: string): string {
+          const ext = fname.split('.').pop()?.toLowerCase();
+          if (ext === 'pdf') return 'application/pdf';
+          if (ext === 'png') return 'image/png';
+          if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg';
+          // Only trust the fallback if it's already a valid MIME type
+          const validMimes = ['application/pdf', 'image/png', 'image/jpeg', 'image/jpg'];
+          return validMimes.includes(fallback?.toLowerCase()) ? fallback : 'application/pdf';
+        }
+        const mimeType = inferMime(filename, type);
+
         // ── Inferred category detection from filename keywords ──
         const fnLower = filename.toLowerCase();
         let targetCategory = CATEGORIES.find(c => c.id === 'general')!;
@@ -774,7 +794,6 @@ export const useAppStore = create<AppState>()(
             return;
           }
         }
-        const mimeType = uploadMimeType(filename, type);
 
         const newDoc: UploadedDoc = {
           id: Date.now().toString(),
@@ -790,6 +809,7 @@ export const useAppStore = create<AppState>()(
 
         try {
           const formData = new FormData();
+          // Pass the correctly inferred mimeType — never pass the raw `type` arg from expo picker
           formData.append('file', { uri, type: mimeType, name: filename } as any);
 
           const uploadHeaders: Record<string, string> = {};
@@ -803,11 +823,13 @@ export const useAppStore = create<AppState>()(
 
           if (apiResponse.ok) {
             const docData = await apiResponse.json();
+            const uploadedDocId = docData.id?.toString();
             set((s) => ({
               documents: s.documents.map((d) =>
                 d.id === newDoc.id
                   ? { 
-                      ...d, 
+                      ...d,
+                      id: uploadedDocId || d.id,  // use backend ID for polling
                       status: 'pending', 
                       fileUrl: docData.file_path ? `${API_BASE_URL}${docData.file_path}` : undefined,
                       sessionId: docData.session_id,
@@ -815,10 +837,73 @@ export const useAppStore = create<AppState>()(
                   : d
               ),
             }));
-            const activeId = get().activeSession?.id;
-            if (activeId) await get().loadSession(activeId);
-            // Silently fetch user documents to synchronize signed URLs
-            get().fetchUserDocuments().catch(() => {});
+
+            // ── Poll for Sarvam Vision completion (BUG 2 & 3 fix) ──
+            // Sarvam Vision runs as a background job (20–120s). We poll every 5s
+            // until analysis_status flips to completed or failed (max 30 tries = 150s).
+            const pollUploadedDocId = uploadedDocId;
+            if (pollUploadedDocId) {
+              let attempts = 0;
+              const poll = async () => {
+                if (attempts >= 30) return;  // Give up after 150 seconds
+                attempts++;
+                try {
+                  const { authToken: token } = get();
+                  const pollHeaders: Record<string, string> = {};
+                  if (token) pollHeaders['Authorization'] = `Bearer ${token}`;
+                  const pollRes = await apiClient('/api/sessions/user/all-docs', { headers: pollHeaders });
+                  if (!pollRes.ok) return;
+                  const allDocs: any[] = await pollRes.json();
+                  const target = allDocs.find((d: any) => d.id?.toString() === pollUploadedDocId);
+                  if (!target) return;
+
+                  const newStatus =
+                    target.analysis_status === 'completed' ? 'analysed' :
+                    target.analysis_status === 'failed' ? 'failed' : 'pending';
+
+                  // Update doc status in the store
+                  set((s) => ({
+                    documents: s.documents.map((d) =>
+                      d.id === pollUploadedDocId || d.id === newDoc.id
+                        ? {
+                            ...d,
+                            id: pollUploadedDocId,
+                            status: newStatus,
+                            sessionId: target.session_id || d.sessionId,
+                            fileUrl: target.file_path ? `${API_BASE_URL}${target.file_path}` : d.fileUrl,
+                          }
+                        : d
+                    ),
+                  }));
+
+                  if (newStatus === 'analysed' && target.session_id) {
+                    // Document session is ready — set banner info for my-files.tsx
+                    // The backend created a new dedicated session for this document.
+                    const newSessionId: string = target.session_id;
+                    const backendCategory: string = target.category || 'general';
+                    const categoryId = categoryIdFromLabel(backendCategory);
+                    set({ documentReadyInfo: { docName: filename, sessionId: newSessionId, categoryId } });
+                    // Also refresh the full documents list with signed URLs
+                    get().fetchUserDocuments().catch(() => {});
+                    return;  // Stop polling — done!
+                  }
+
+                  if (newStatus === 'failed') {
+                    // Stop polling on failure — banner won't be shown
+                    return;
+                  }
+
+                  // Still pending — poll again in 5 seconds
+                  setTimeout(poll, 5000);
+                } catch {
+                  // Network error during poll — retry silently
+                  setTimeout(poll, 5000);
+                }
+              };
+              // Start polling 5 seconds after upload succeeds
+              setTimeout(poll, 5000);
+            }
+
           } else {
             const err = await apiResponse.text();
             throw new Error(`Upload failed: ${err}`);

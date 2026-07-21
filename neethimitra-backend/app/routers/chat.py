@@ -164,11 +164,14 @@ async def _process_and_respond(
 
 
     # Persist user message
+    # original_language is the DETECTED language of this specific message
+    # (may differ from session_language when user types in English during a Tamil session).
+    # This is what powers the Translate button — it toggles text_content ↔ english_translation.
     user_msg = Message(
         session_id=session_id,
         role="user",
         text_content=original_text,
-        original_language=session_language,
+        original_language=detected_language,   # actual language of THIS message, not session default
         english_translation=english_query,
         input_type=input_type,
         category=resolved_category,

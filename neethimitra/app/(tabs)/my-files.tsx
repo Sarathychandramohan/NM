@@ -37,7 +37,7 @@ function getImageMimeType(asset: ImagePicker.ImagePickerAsset): string {
 }
 
 export default function DocumentsScreen() {
-  const { isDarkMode, documents, uploadDocument, setOverlay, selectedLanguage, textSize, isAnonymousGuest } = useAppStore();
+  const { isDarkMode, documents, uploadDocument, setOverlay, selectedLanguage, textSize, isAnonymousGuest, documentReadyInfo, clearDocumentReady } = useAppStore();
   const C      = isDarkMode ? Colors.dark : Colors.light;
   const router = useRouter();
   const t = UI_TRANSLATIONS[selectedLanguage.code] || UI_TRANSLATIONS['en-IN'];
@@ -46,6 +46,19 @@ export default function DocumentsScreen() {
 
   const [isUploading, setIsUploading] = React.useState(false);
   const [uploadError, setUploadError] = React.useState<string | null>(null);
+
+  // Navigate to the auto-created document chat session
+  const handleOpenDocumentSession = async () => {
+    if (!documentReadyInfo) return;
+    try {
+      const { loadSession } = useAppStore.getState();
+      await loadSession(documentReadyInfo.sessionId);
+      clearDocumentReady();
+      router.push(`/chat/${documentReadyInfo.categoryId}` as any);
+    } catch {
+      clearDocumentReady();
+    }
+  };
 
   const handlePickDocument = async () => {
     // Block guest users — show login prompt
@@ -190,6 +203,25 @@ export default function DocumentsScreen() {
             {documents.length} {documents.length === 1 ? t.fileCount : t.filesCount}
           </Text>
         </View>
+
+        {/* Document ready banner — shown when Sarvam Vision background job completes */}
+        {documentReadyInfo && (
+          <View style={[styles.banner, { backgroundColor: isDarkMode ? 'rgba(22,163,74,0.15)' : '#DCFCE7', borderColor: Colors.green }]}>
+            <CheckCircle2 size={16} color={Colors.green} />
+            <Text style={{ color: Colors.green, fontSize: 13 * scale, flex: 1, fontFamily: 'PlusJakartaSans_600SemiBold' }}>
+              {documentReadyInfo.docName} is ready to chat!
+            </Text>
+            <TouchableOpacity
+              onPress={handleOpenDocumentSession}
+              style={{ backgroundColor: Colors.green, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 }}
+            >
+              <Text style={{ color: '#fff', fontSize: 12 * scale, fontFamily: 'PlusJakartaSans_700Bold' }}>Open Chat</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={clearDocumentReady}>
+              <X size={16} color={Colors.green} />
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* Upload Status Banners */}
         {uploadError && (

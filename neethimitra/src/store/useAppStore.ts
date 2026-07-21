@@ -883,8 +883,10 @@ export const useAppStore = create<AppState>()(
                     const backendCategory: string = target.category || 'general';
                     const categoryId = categoryIdFromLabel(backendCategory);
                     set({ documentReadyInfo: { docName: filename, sessionId: newSessionId, categoryId } });
-                    // Also refresh the full documents list with signed URLs
+                    // Refresh documents list with signed URLs AND refresh session list
+                    // so the new document-triggered session appears in the sidebar immediately
                     get().fetchUserDocuments().catch(() => {});
+                    get().fetchSessions().catch(() => {});
                     return;  // Stop polling — done!
                   }
 

@@ -191,13 +191,10 @@ async def _process_and_respond(
     )
     logger.info("translate_text (en→%s) took %.2fs", safe_lang, time.time() - t0)
 
-    # Synthesize speech automatically ONLY if the input was voice
-    if input_type == "voice":
-        t0 = time.time()
-        audio_url = await synthesize_speech(regional_response, safe_lang)
-        logger.info("synthesize_speech took %.2fs", time.time() - t0)
-    else:
-        audio_url = None
+    # Audio is generated ON-DEMAND only when the user taps "Speak" (POST /speak endpoint).
+    # Auto-generating TTS here wasted 2-5s of latency and Sarvam API quota on every voice
+    # message, even when the user never listened to the audio.
+    audio_url = None
 
     # Persist assistant message
     ai_msg = Message(
@@ -464,17 +461,17 @@ async def speak_message(
     if not message:
         raise HTTPException(status_code=404, detail="Message not found")
 
-    if not message.audio_url:
-        raw_lang = message.original_language or db_session.language_code or "en-IN"
-        lang = normalise_to_11_lang(raw_lang)
-        logger.info("speak_message: synthesizing TTS for message_id=%d lang=%s (raw=%s)", message_id, lang, raw_lang)
-        t0 = time.time()
-        audio_url = await synthesize_speech(message.text_content, lang)
-        logger.info("speak_message: synthesize_speech took %.2fs", time.time() - t0)
-        message.audio_url = audio_url
-        db.commit()
-        db.refresh(message)
-    else:
-        logger.info("speak_message: audio_url already exists for message_id=%d — returning cached", message_id)
+    raw_lang = message.original_language or db_session.language_code or "en-IN"
+    lang = normalise_to_11_lang(raw_lang)
+    logger.info("speak_message: synthesizing TTS for message_id=%d lang=%s (raw=%s)", message_id, lang, raw_lang)
+    t0 = time.time()
+    # Always re-generate — Render free tier ephemeral disk wipes /static/audio/ on every
+    # redeploy, so cached audio_url values become 404s after each deploy.
+    # Re-generating on every tap is the only reliable approach on free hosting.
+    audio_url = await synthesize_speech(message.text_content, lang)
+    logger.info("speak_message: synthesize_speech took %.2fs", time.time() - t0)
+    message.audio_url = audio_url
+    db.commit()
+    db.refresh(message)
 
     return message

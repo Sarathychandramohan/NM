@@ -12,20 +12,11 @@ import { UI_TRANSLATIONS } from '@constants/translations';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import {
-  Upload, FileText, User, Home, Briefcase,
-  Heart, Scale, CheckCircle2, Clock, AlertCircle, X
+  Upload, FileText, CheckCircle2, Clock, AlertCircle, X, Info
 } from 'lucide-react-native';
 import { ActivityIndicator } from 'react-native';
 import ErrorBoundary from '@/components/ui/ErrorBoundary';
 
-const DOC_TYPE_ICONS: Record<string, any> = {
-  Aadhaar:      User,
-  'Land Records': Home,
-  'FIR Copy':   Briefcase,
-  'Medical Bills': Heart,
-  'RTI Reply':  FileText,
-  'Court Notice': Scale,
-};
 
 function getImageMimeType(asset: ImagePicker.ImagePickerAsset): string {
   if (asset.mimeType) return asset.mimeType;
@@ -173,23 +164,6 @@ export default function DocumentsScreen() {
     }
   };
 
-  const DOC_TYPES = [
-    { label: 'Aadhaar',       Icon: User      },
-    { label: 'Land Records',  Icon: Home      },
-    { label: 'FIR Copy',      Icon: Briefcase },
-    { label: 'Medical Bills', Icon: Heart     },
-    { label: 'RTI Reply',     Icon: FileText  },
-    { label: 'Court Notice',  Icon: Scale     },
-  ];
-
-  const docTypeLabels: Record<string, string> = {
-    'Aadhaar': t.aadhaar,
-    'Land Records': t.landRecords,
-    'FIR Copy': t.firCopy,
-    'Medical Bills': t.medicalBills,
-    'RTI Reply': t.rtiReply,
-    'Court Notice': t.courtNotice,
-  };
 
   const screenContent = (
     <SafeAreaView style={[styles.container, { backgroundColor: C.background }]} edges={['bottom']}>
@@ -268,21 +242,12 @@ export default function DocumentsScreen() {
           </Text>
         </TouchableOpacity>
 
-        {/* Supported types */}
-        <Text style={[styles.sectionLabel, { color: C.textSecondary, fontSize: 11 * scale }]}>{t.supportedTypes}</Text>
-        <View style={styles.chipRow}>
-          {DOC_TYPES.map((docType) => {
-            const Icon = docType.Icon;
-            const translatedLabel = docTypeLabels[docType.label] ?? docType.label;
-            return (
-              <View key={docType.label} style={[styles.chip, {
-                backgroundColor: C.surface, borderColor: C.surfaceBorder,
-              }]}>
-                <Icon size={11} color={C.textSecondary} strokeWidth={1.6} />
-                <Text style={[styles.chipText, { color: C.textSecondary, fontSize: 10 * scale }]} adjustsFontSizeToFit={true} minimumFontScale={0.8} numberOfLines={1}>{translatedLabel}</Text>
-              </View>
-            );
-          })}
+        {/* Supported formats — informational only, not a filter */}
+        <View style={[styles.supportedBox, { backgroundColor: C.surface, borderColor: C.surfaceBorder }]}>
+          <Info size={14} color={C.textSecondary} strokeWidth={1.8} />
+          <Text style={[styles.supportedText, { color: C.textSecondary, fontSize: 11 * scale }]}>
+            Supported: PDF, JPG, PNG · Max 10 MB per file
+          </Text>
         </View>
 
         {/* Recent uploads */}
@@ -305,7 +270,7 @@ export default function DocumentsScreen() {
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.docName, { color: C.text, fontSize: 14 * scale }]} numberOfLines={1}>{doc.name}</Text>
                   <Text style={[styles.docMeta, { color: C.textSecondary, fontSize: 12 * scale }]}>
-                    {docTypeLabels[doc.type] ?? doc.type} · {doc.date}
+                    {doc.type?.split('/')[1]?.toUpperCase() ?? 'FILE'} · {doc.date}
                   </Text>
                 </View>
                 {/* Status badge: analysed = green, failed = red, pending = orange */}
@@ -390,12 +355,16 @@ const styles = StyleSheet.create({
   badge:   { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 5, borderRadius: 10 },
   badgeText:{ fontSize: 11, fontFamily: 'PlusJakartaSans_700Bold' },
   banner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    marginBottom: 8,
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    padding: 12, borderRadius: 12, borderWidth: 1, marginBottom: 8,
+  },
+  // Supported formats info box (replaces old decorative filter chips)
+  supportedBox: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8,
+    marginBottom: 18,
+  },
+  supportedText: {
+    fontFamily: 'PlusJakartaSans_400Regular', fontSize: 11, flex: 1,
   },
 });

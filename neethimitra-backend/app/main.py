@@ -1,4 +1,6 @@
+import asyncio
 import logging
+import os
 import sys
 import time
 from contextlib import asynccontextmanager
@@ -29,6 +31,7 @@ logger = logging.getLogger(__name__)
 logger.info("main.py: logging is now configured — this line proves it")
 
 
+
 @asynccontextmanager
 async def lifespan(app_instance):
     """Startup/shutdown tasks run once on cold start."""
@@ -40,8 +43,40 @@ async def lifespan(app_instance):
         logger.info("lifespan: helpline seeder completed")
     except Exception as exc:
         logger.error("lifespan: helpline seeder failed (non-fatal): %s", exc)
-    yield
-    # (shutdown tasks go here if needed)
+
+    # ── Keep-alive self-ping for Render free tier ────────────────────────────
+    # Render free instances spin down after ~15 minutes of inactivity, killing
+    # any in-progress background tasks (e.g. Sarvam Vision PDF processing).
+    # Every 9 minutes we ping our own /health endpoint to stay warm.
+    # RENDER_EXTERNAL_URL is automatically injected by Render into the container.
+    render_url = os.getenv("RENDER_EXTERNAL_URL", "").rstrip("/")
+
+    async def _keep_alive_loop():
+        if not render_url:
+            logger.info("keep-alive: no RENDER_EXTERNAL_URL — skipping (local dev)")
+            return
+        import httpx
+        ping_url = f"{render_url}/health"
+        logger.info("keep-alive: starting loop — ping every 9 min → %s", ping_url)
+        while True:
+            await asyncio.sleep(9 * 60)  # 9 minutes
+            try:
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    r = await client.get(ping_url)
+                logger.info("keep-alive: ping %s → %s", ping_url, r.status_code)
+            except Exception as exc:
+                logger.warning("keep-alive: ping failed (non-fatal): %s", exc)
+
+    task = asyncio.create_task(_keep_alive_loop())
+
+    yield  # app is running
+
+    # Graceful shutdown — cancel the ping loop
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
 
 
 app = FastAPI(title="NeethiMitra AI Backend", lifespan=lifespan)

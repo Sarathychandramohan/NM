@@ -150,6 +150,8 @@ async def synthesize_speech(text: str, target_language_code: str, speaker: str =
                 "speaker": speaker,
                 "model": "bulbul:v3",                # current model; do NOT use bulbul:v1
                 "enable_preprocessing": True,
+                "pace": 0.95,                        # Sarvam-recommended: 5% slower than default
+                                                     # improves clarity for legal terms (RTI, FIR, Article 21)
             }
 
             response = await client.post(

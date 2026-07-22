@@ -166,7 +166,8 @@ interface AppState {
   startSession: (category: Category) => Promise<void>;
   fetchSessions: () => Promise<void>;
   sendMessageToBackend: (text: string, isVoice?: boolean) => Promise<void>;
-  sendVoiceRecording: (audioUri: string) => Promise<void>;  // BUG-F007 support
+  sendVoiceRecording: (audioUri: string) => Promise<void>;  // BUG-F007 support (native)
+  sendVoiceTranscript: (transcript: string) => Promise<void>; // WS-STT: send transcript as text msg
   clearActiveSession: () => void;
   loadSession: (sessionId: string) => Promise<void>;
   deleteSession: (sessionId: string) => Promise<void>;
@@ -690,6 +691,18 @@ export const useAppStore = create<AppState>()(
           set({ isProcessing: false });
         }
       },
+
+      // ── WS-STT: send transcript text from WebSocket STT as a voice message ──
+      // Called from RecordingOverlay (web) after the WebSocket STT session ends.
+      // Instead of re-uploading audio, we POST the transcript text to /messages
+      // with input_type='voice' so the backend logs it as a voice interaction.
+      sendVoiceTranscript: async (transcript: string) => {
+        if (!transcript || !transcript.trim()) return;
+        // Delegate to sendMessageToBackend with isVoice=true
+        // This reuses all the error handling, auth, and session logic.
+        await get().sendMessageToBackend(transcript.trim(), true);
+      },
+
 
       generateComplaint: async () => {
         const { activeSession, authToken } = get();

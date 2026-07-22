@@ -16,7 +16,7 @@ import { useAudioRecorder, useAudioRecorderState, AudioModule, setAudioModeAsync
 import * as Haptics from 'expo-haptics';
 
 export function RecordingOverlay() {
-  const { activeOverlay, setOverlay, setListening, isDarkMode, sendVoiceRecording, selectedLanguage } = useAppStore();
+  const { activeOverlay, setOverlay, setListening, isDarkMode, sendVoiceRecording, sendVoiceTranscript, selectedLanguage } = useAppStore();
   const t = UI_TRANSLATIONS[selectedLanguage.code] || UI_TRANSLATIONS['en-IN'];
   const C = isDarkMode ? Colors.dark : Colors.light;
   const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = useWindowDimensions();
@@ -70,8 +70,10 @@ export function RecordingOverlay() {
   // ── BUG-F007: Real audio recording state (native + web) ─────────────
   const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const recorderState = useAudioRecorderState(audioRecorder);
-  const mediaRecorderRef  = useRef<MediaRecorder | null>(null);  // web fallback
+  const mediaRecorderRef  = useRef<MediaRecorder | null>(null);  // web MediaRecorder
   const chunksRef         = useRef<Blob[]>([]);                  // web audio chunks
+  const wsRef             = useRef<WebSocket | null>(null);      // WS-STT connection (web)
+  const chunkIntervalRef  = useRef<ReturnType<typeof setInterval> | null>(null); // WS chunk send timer
   const waveIntervalRef   = useRef<ReturnType<typeof setInterval> | null>(null);
   const [transcript, setTranscript] = useState<string>('Listening to your query…');
   // ─────────────────────────────────────────────────────────────────────────────
@@ -96,17 +98,59 @@ export function RecordingOverlay() {
   }, [isRecording]);
 
   const startAudioRecording = async () => {
-    // ─ Web: use browser MediaRecorder API ────────────────────────────────────
+    // ─ Web: use WebSocket STT streaming + MediaRecorder ─────────────────────
     if (isWeb) {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        // BUG-F031 FIX: Always clear old chunks before starting a new session
         chunksRef.current = [];
+        setTranscript('🎤 Listening… speak now');
+
+        // ── Open WebSocket to backend /ws/stt ────────────────────────────
+        const wsUrl = (process.env.EXPO_PUBLIC_API_URL || 'https://neethimitra-backend.onrender.com')
+          .replace(/^http/, 'ws')   // http→ws, https→wss
+          + '/ws/stt';
+        const ws = new WebSocket(wsUrl);
+        wsRef.current = ws;
+
+        ws.onopen = () => {
+          console.log('[RecordingOverlay] WS-STT connected:', wsUrl);
+        };
+
+        ws.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            if (data.transcript) {
+              setTranscript(data.transcript);
+            }
+            if (data.error) {
+              console.warn('[RecordingOverlay] WS-STT server error:', data.error);
+            }
+          } catch { /* ignore malformed frames */ }
+        };
+
+        ws.onerror = (err) => {
+          console.warn('[RecordingOverlay] WS-STT error:', err);
+          setTranscript('Recognition error — tap Send to try anyway');
+        };
+
+        // ── Start MediaRecorder, flush chunks to WS every 3s ────────────
         const mr = new MediaRecorder(stream);
         mr.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
-        mr.start();
+        mr.start(3000);  // timeslice=3000ms — triggers ondataavailable every 3s
         mediaRecorderRef.current = mr;
-        setTranscript(t.listeningQuery || 'Listening to your query…');
+
+        // Send accumulated chunks to WS every 3s for live transcription
+        chunkIntervalRef.current = setInterval(() => {
+          if (chunksRef.current.length === 0) return;
+          const ws = wsRef.current;
+          if (!ws || ws.readyState !== WebSocket.OPEN) return;
+          const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
+          chunksRef.current = [];
+          blob.arrayBuffer().then((buf) => {
+            if (ws.readyState === WebSocket.OPEN) ws.send(buf);
+          }).catch(() => {});
+        }, 3000);
+
       } catch {
         setTranscript('Microphone unavailable in browser');
       }
@@ -131,12 +175,21 @@ export function RecordingOverlay() {
   };
 
   const stopAndDiscardRecording = async () => {
-    // Web
+    // Web — stop MediaRecorder and close WebSocket cleanly
     if (isWeb) {
+      if (chunkIntervalRef.current) {
+        clearInterval(chunkIntervalRef.current);
+        chunkIntervalRef.current = null;
+      }
       if (mediaRecorderRef.current) {
         mediaRecorderRef.current.stop();
         mediaRecorderRef.current.stream.getTracks().forEach((t) => t.stop());
         mediaRecorderRef.current = null;
+      }
+      // Close WS without sending the final signal (discard = no message sent)
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
       }
       chunksRef.current = [];
       return;
@@ -204,25 +257,69 @@ export function RecordingOverlay() {
     if (!isWeb) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setListening(false);
 
-    // ─ Web: stop MediaRecorder and get blob URI ───────────────────────────
+    // ─ Web: finalize WebSocket STT and send transcript as text ─────────
     if (isWeb) {
+      // Stop the chunk interval so no more audio is sent
+      if (chunkIntervalRef.current) {
+        clearInterval(chunkIntervalRef.current);
+        chunkIntervalRef.current = null;
+      }
+
+      const ws = wsRef.current;
       const mr = mediaRecorderRef.current;
-      if (mr && mr.state !== 'inactive') {
-        mr.onstop = async () => {
-          const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
-          const uri  = URL.createObjectURL(blob);
-          chunksRef.current = [];
+
+      // Collect the final captured transcript before cleanup
+      // (transcript state holds the last WS message received)
+      let finalTranscript = transcript;
+      if (finalTranscript === '🎤 Listening… speak now' || finalTranscript === '') {
+        finalTranscript = '';
+      }
+
+      const cleanupWeb = () => {
+        if (mr) {
           mr.stream.getTracks().forEach((t) => t.stop());
           mediaRecorderRef.current = null;
-          setOverlay(null);
-          swipeY.value = 0;
-          await sendVoiceRecording(uri);
-        };
-        mr.stop();
-      } else {
+        }
+        if (wsRef.current) {
+          wsRef.current.close();
+          wsRef.current = null;
+        }
+        chunksRef.current = [];
         setOverlay(null);
         swipeY.value = 0;
+        setTranscript('Listening to your query…');
+      };
+
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        // Send any remaining buffered audio
+        if (chunksRef.current.length > 0) {
+          const remaining = new Blob(chunksRef.current, { type: 'audio/webm' });
+          chunksRef.current = [];
+          remaining.arrayBuffer().then((buf) => {
+            if (ws.readyState === WebSocket.OPEN) ws.send(buf);
+          }).catch(() => {});
+        }
+        // Signal end-of-stream with empty bytes
+        ws.send(new ArrayBuffer(0));
+        // Wait briefly for the final transcript, then send
+        setTimeout(async () => {
+          const captured = transcript;
+          cleanupWeb();
+          if (captured && captured !== '🎤 Listening… speak now') {
+            await sendVoiceTranscript(captured);
+          } else if (finalTranscript) {
+            await sendVoiceTranscript(finalTranscript);
+          }
+        }, 800);
+      } else {
+        // WS not open — fall back to whatever transcript was received
+        cleanupWeb();
+        if (finalTranscript) {
+          await sendVoiceTranscript(finalTranscript);
+        }
       }
+
+      if (mr && mr.state !== 'inactive') mr.stop();
       return;
     }
 
@@ -369,11 +466,27 @@ export function RecordingOverlay() {
               ))}
             </View>
 
-            {/* Transcript */}
-            <View style={{ minHeight: 48, width: '100%', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8, marginBottom: 20 }}>
-              <Text style={{ fontSize: 14, fontWeight: '500', textAlign: 'center', color: isDarkMode ? '#D1D5DB' : '#4B5563', lineHeight: 20, fontStyle: 'italic' }}>
-                {transcript}
-              </Text>
+            {/* Transcript — shows live WS-STT text when available */}
+            <View style={{ minHeight: 56, width: '100%', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8, marginBottom: 20 }}>
+              {transcript && transcript !== '🎤 Listening… speak now' ? (
+                <View style={{
+                  backgroundColor: isDarkMode ? 'rgba(249, 115, 22, 0.12)' : 'rgba(249, 115, 22, 0.08)',
+                  borderRadius: 10,
+                  paddingVertical: 8,
+                  paddingHorizontal: 12,
+                  width: '100%',
+                  borderWidth: 1,
+                  borderColor: 'rgba(249, 115, 22, 0.25)',
+                }}>
+                  <Text style={{ fontSize: 13, fontWeight: '600', textAlign: 'center', color: isDarkMode ? '#FDE68A' : '#92400E', lineHeight: 19 }}>
+                    {transcript}
+                  </Text>
+                </View>
+              ) : (
+                <Text style={{ fontSize: 14, fontWeight: '500', textAlign: 'center', color: isDarkMode ? '#9CA3AF' : '#6B7280', lineHeight: 20, fontStyle: 'italic' }}>
+                  {transcript}
+                </Text>
+              )}
             </View>
 
             {/* Web Action Buttons: OK/Send & Cancel */}

@@ -32,9 +32,14 @@ def _get_audio_mime_type(filename: str) -> str:
     return mime
 
 
-async def transcribe_audio(file_bytes: bytes, filename: str, language_code: str = "en-IN") -> str:
+async def transcribe_audio(file_bytes: bytes, filename: str, language_code: str = "unknown") -> str:
     """
     Transcribes audio using Sarvam AI Saaras v3 in 'transcribe' mode.
+
+    language_code="unknown" enables automatic language detection across all 23 languages
+    that saaras:v3 supports. This is the Sarvam-recommended approach — passing the
+    session's expected language caused misrecognition when the user speaks a different
+    language than the one selected in settings.
 
     mode='transcribe' keeps the output in the original spoken language (e.g., Tamil speech → Tamil text).
     The caller (send_voice_message) then passes the original-language text through translate_text() to
@@ -51,7 +56,7 @@ async def transcribe_audio(file_bytes: bytes, filename: str, language_code: str 
     files = {"file": (filename, file_bytes, mime_type)}
     data = {
         "model": "saaras:v3",
-        "language_code": language_code,
+        "language_code": language_code,   # "unknown" = auto-detect (Sarvam-recommended)
         "mode": "transcribe",
     }
 

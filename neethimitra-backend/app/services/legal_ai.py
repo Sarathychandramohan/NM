@@ -107,6 +107,10 @@ async def _call_sarvam_llm(
                                  # 1024 was too low and caused reasoning to exhaust the budget
                                  # before producing a final answer (content=null in response).
         "temperature": 0.3,
+        "reasoning_effort": "low",  # Sarvam-recommended for Q&A: prevents sarvam-30b from
+                                    # spending ALL tokens on internal chain-of-thought before
+                                    # emitting the actual answer (which produced content=null).
+                                    # "low" keeps minimal reasoning for legal analysis accuracy.
     }
 
     start_time = time.time()

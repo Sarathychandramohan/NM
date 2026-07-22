@@ -5,6 +5,8 @@ import logging
 import sys
 from app.config import settings
 from app.services.legal_ai import normalise_to_11_lang
+from app.utils.rate_limiter import translation_limiter
+
 
 logger = logging.getLogger(__name__)
 
@@ -196,6 +198,7 @@ async def translate_text(
 
         start_time = time.time()
         try:
+            await translation_limiter.acquire()
             async with httpx.AsyncClient() as client:
                 response = await client.post(
                     SARVAM_TRANSLATE_URL, headers=headers, json=payload, timeout=30.0

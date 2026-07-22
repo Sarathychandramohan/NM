@@ -76,9 +76,20 @@ export function RecordingOverlay() {
   const chunkIntervalRef  = useRef<ReturnType<typeof setInterval> | null>(null); // WS chunk send timer
   const waveIntervalRef   = useRef<ReturnType<typeof setInterval> | null>(null);
   const [transcript, setTranscript] = useState<string>('Listening to your query…');
+  const [connectionState, setConnectionState] = useState<'idle' | 'connecting' | 'connected' | 'error'>('idle');
   // ─────────────────────────────────────────────────────────────────────────────
 
   const isRecording = activeOverlay === 'recording';
+
+  // ── Helper: Pick best supported MIME type for web recording ────────────────
+  const getSupportedMimeType = (): string => {
+    if (typeof MediaRecorder === 'undefined') return '';
+    const types = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4'];
+    for (const type of types) {
+      if (MediaRecorder.isTypeSupported(type)) return type;
+    }
+    return '';
+  };
 
   // ── Start/stop real recording based on overlay visibility ─────────────
   useEffect(() => {
@@ -101,7 +112,16 @@ export function RecordingOverlay() {
     // ─ Web: use WebSocket STT streaming + MediaRecorder ─────────────────────
     if (isWeb) {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        setConnectionState('connecting');
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            channelCount: 1,       // mono — Saaras v3 expects mono
+            sampleRate: 16000,     // 16kHz optimal for STT
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          },
+        });
         chunksRef.current = [];
         setTranscript('🎤 Listening… speak now');
 
@@ -113,6 +133,7 @@ export function RecordingOverlay() {
         wsRef.current = ws;
 
         ws.onopen = () => {
+          setConnectionState('connected');
           console.log('[RecordingOverlay] WS-STT connected:', wsUrl);
         };
 
@@ -130,11 +151,17 @@ export function RecordingOverlay() {
 
         ws.onerror = (err) => {
           console.warn('[RecordingOverlay] WS-STT error:', err);
+          setConnectionState('error');
           setTranscript('Recognition error — tap Send to try anyway');
         };
 
-        // ── Start MediaRecorder, flush chunks to WS every 3s ────────────
-        const mr = new MediaRecorder(stream);
+        ws.onclose = () => {
+          setConnectionState('idle');
+        };
+
+        // ── Start MediaRecorder with best supported mimeType ─────────────
+        const mimeType = getSupportedMimeType();
+        const mr = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
         mr.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
         mr.start(500);  // timeslice=500ms — Sarvam docs Q1: 100-500ms optimal for real-time STT
         mediaRecorderRef.current = mr;
@@ -144,15 +171,20 @@ export function RecordingOverlay() {
           if (chunksRef.current.length === 0) return;
           const ws = wsRef.current;
           if (!ws || ws.readyState !== WebSocket.OPEN) return;
-          const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
+          const blob = new Blob(chunksRef.current, { type: mimeType || 'audio/webm' });
           chunksRef.current = [];
           blob.arrayBuffer().then((buf) => {
             if (ws.readyState === WebSocket.OPEN) ws.send(buf);
           }).catch(() => {});
         }, 500);
 
-      } catch {
-        setTranscript('Microphone unavailable in browser');
+      } catch (err: any) {
+        setConnectionState('error');
+        if (err?.name === 'NotAllowedError') {
+          setTranscript('Microphone permission denied');
+        } else {
+          setTranscript('Microphone unavailable in browser');
+        }
       }
       return;
     }

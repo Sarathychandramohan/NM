@@ -9,7 +9,9 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.core.dependencies import get_current_user
 from app.database import get_db
+from app.middleware.rate_limit_deps import check_llm_limit, check_stt_limit, check_tts_limit
 from app.models import Message, Session as DBSession, User
+
 from app.schemas import ChatResponse
 from app.services.legal_ai import get_legal_response, normalise_to_11_lang
 from app.services.sarvam_lid import detect_language
@@ -241,7 +243,7 @@ async def _process_and_respond(
     return {"user_message": user_msg, "assistant_message": ai_msg}
 
 
-@router.post("/{session_id}/messages", response_model=ChatResponse)
+@router.post("/{session_id}/messages", response_model=ChatResponse, dependencies=[Depends(check_llm_limit)])
 async def send_text_message(
     session_id: str,
     payload: TextMessageRequest,
@@ -336,7 +338,11 @@ async def send_text_message(
         raise HTTPException(status_code=500, detail=f"Unexpected server error: {type(exc).__name__}: {exc}")
 
 
-@router.post("/{session_id}/messages/voice", response_model=ChatResponse)
+@router.post(
+    "/{session_id}/messages/voice",
+    response_model=ChatResponse,
+    dependencies=[Depends(check_stt_limit), Depends(check_llm_limit)],
+)
 async def send_voice_message(
     session_id: str,
     audio_file: UploadFile = File(...),

@@ -23,9 +23,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import ensure_storage_dirs, settings
-from app.routers import auth, chat, complaints, documents, files, helplines, sessions, stt_ws
+from app.routers import auth, chat, complaints, documents, files, helplines, monitoring, sessions, stt_ws
 from app.database import SessionLocal
 from app.services.helpline_seeder import seed_helplines
+from app.utils.rate_limiter import per_user_llm, per_user_stt, per_user_tts
+
 
 logger = logging.getLogger(__name__)
 logger.info("main.py: logging is now configured — this line proves it")
@@ -44,11 +46,12 @@ async def lifespan(app_instance):
     except Exception as exc:
         logger.error("lifespan: helpline seeder failed (non-fatal): %s", exc)
 
+    # Start per-user rate limiter background eviction tasks
+    await per_user_llm.start()
+    await per_user_stt.start()
+    await per_user_tts.start()
+
     # ── Keep-alive self-ping for Render free tier ────────────────────────────
-    # Render free instances spin down after ~15 minutes of inactivity, killing
-    # any in-progress background tasks (e.g. Sarvam Vision PDF processing).
-    # Every 9 minutes we ping our own /health endpoint to stay warm.
-    # RENDER_EXTERNAL_URL is automatically injected by Render into the container.
     render_url = os.getenv("RENDER_EXTERNAL_URL", "").rstrip("/")
 
     async def _keep_alive_loop():
@@ -71,12 +74,17 @@ async def lifespan(app_instance):
 
     yield  # app is running
 
-    # Graceful shutdown — cancel the ping loop
+    # Graceful shutdown
+    await per_user_llm.stop()
+    await per_user_stt.stop()
+    await per_user_tts.stop()
+
     task.cancel()
     try:
         await task
     except asyncio.CancelledError:
         pass
+
 
 
 app = FastAPI(title="NeethiMitra AI Backend", lifespan=lifespan)
@@ -118,7 +126,9 @@ app.include_router(documents.router)
 app.include_router(complaints.router)
 app.include_router(helplines.router)
 app.include_router(files.router)
+app.include_router(monitoring.router)
 app.include_router(stt_ws.router)  # WebSocket STT streaming — /ws/stt
+
 
 
 @app.get("/")

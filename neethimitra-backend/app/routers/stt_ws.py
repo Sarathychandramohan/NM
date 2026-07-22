@@ -5,7 +5,7 @@ import httpx
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.config import settings
-from app.utils.rate_limiter import stt_limiter
+from app.utils.rate_limiter import per_user_stt, stt_limiter
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -13,9 +13,27 @@ SARVAM_STT_URL = "https://api.sarvam.ai/speech-to-text"
 
 
 @router.websocket("/ws/stt")
-async def stt_websocket(websocket: WebSocket):
+async def stt_websocket(
+    websocket: WebSocket,
+    session_id: str = "",
+    user_id: str = "anonymous",
+    is_guest: str = "true",
+):
+    guest = is_guest.lower() != "false"
+
+    user_ok = await per_user_stt.acquire(user_id=user_id, is_guest=guest, timeout=3.0)
+    if not user_ok:
+        await websocket.close(code=1008, reason="User STT rate limit exceeded")
+        return
+
+    global_ok = await stt_limiter.acquire(timeout=5.0)
+    if not global_ok:
+        await websocket.close(code=1008, reason="STT service at capacity")
+        return
+
     await websocket.accept()
-    logger.info("STT WebSocket: client connected")
+    logger.info("STT WebSocket: client connected — user=%s session=%s", user_id, session_id)
+
     accumulated_transcript = ""
     try:
         while True:

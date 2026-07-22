@@ -8,6 +8,7 @@ import httpx
 import time
 from app.config import settings
 from app.services.legal_ai import normalise_to_11_lang
+from app.utils.rate_limiter import tts_limiter
 
 logger = logging.getLogger(__name__)
 
@@ -19,28 +20,55 @@ SARVAM_TTS_URL = "https://api.sarvam.ai/text-to-speech"
 
 def clean_for_tts(text: str) -> str:
     """
-    Strip markdown formatting before passing text to Bulbul v3 TTS.
+    Strip markdown and formatting before passing text to Bulbul v3 TTS.
+    Handles English + all 11 Indian language scripts and legal text symbols.
 
     Bulbul v3 reads markdown symbols aloud ("hash hash", "asterisk", "dash")
-    which produces garbled audio output. Mayura has no built-in strip parameter
-    (Sarvam documentation Q4 answer), so we must clean client-side.
-
-    Source: Sarvam AI documentation answer to Q4 + prompt-level FORMAT RULE.
+    which produces garbled audio output.
     """
+    if not text:
+        return ""
+
     # Remove ATX headings: ### Title -> Title
-    text = re.sub(r'^#{1,6}\s*', '', text, flags=re.MULTILINE)
-    # Remove bold (**text**) and italic (*text*)
-    text = re.sub(r'\*{1,3}(.*?)\*{1,3}', r'\1', text)
-    # Remove bullet lines
-    text = re.sub(r'^\s*[-*\u2022]\s+', '', text, flags=re.MULTILINE)
+    text = re.sub(r"^#{1,6}\s*", "", text, flags=re.MULTILINE)
+
+    # Remove bold (**text**) and italic (*text*, __text__, _text_)
+    text = re.sub(r"\*{1,3}(.*?)\*{1,3}", r"\1", text, flags=re.DOTALL)
+    text = re.sub(r"_{1,2}(.*?)_{1,2}", r"\1", text, flags=re.DOTALL)
+
+    # Remove code blocks and inline code
+    text = re.sub(r"```[\s\S]*?```", "", text)
+    text = re.sub(r"`([^`]+)`", r"\1", text)
+
+    # Remove blockquotes and horizontal rules
+    text = re.sub(r"^\s*>\s*", "", text, flags=re.MULTILINE)
+    text = re.sub(r"^\s*[-*_]{3,}\s*$", "", text, flags=re.MULTILINE)
+
+    # Remove bullet list markers (-, *, •, ◦, ▪)
+    text = re.sub(r"^\s*[-*•◦▪]\s+", "", text, flags=re.MULTILINE)
+
     # Remove numbered list markers (1. 2. -> 1) 2))
-    text = re.sub(r'^\s*(\d+)\.\s+', r'\1) ', text, flags=re.MULTILINE)
-    # Remove backtick code spans
-    text = re.sub(r'`{1,3}(.*?)`{1,3}', r'\1', text)
-    # Collapse multiple newlines to a pause-friendly period + space
-    text = re.sub(r'\n{2,}', '. ', text)
-    text = re.sub(r'\n', ' ', text)
+    text = re.sub(r"^\s*(\d+)[.)]\s+", r"\1) ", text, flags=re.MULTILINE)
+
+    # Remove markdown links [text](url) -> text and bare URLs
+    text = re.sub(r"\[([^\]]+)\]\([^\)]+\)", r"\1", text)
+    text = re.sub(r"https?://\S+", "", text)
+    text = re.sub(r"<[^>]+>", "", text)
+
+    # Indian language & legal symbols
+    text = re.sub(r"[§¶]", "", text)
+    text = re.sub(r"॥", "। ", text)
+
+    # Convert multiple newlines to a pause-friendly period + space
+    text = re.sub(r"\n{2,}", ". ", text)
+    text = re.sub(r"\n", " ", text)
+    text = re.sub(r" {2,}", " ", text)
+
+    # Remove footnote markers like [1], [2]
+    text = re.sub(r"\[\d+\]", "", text)
+
     return text.strip()
+
 
 
 def split_text_into_chunks(text: str, max_chars: int = 450) -> list[str]:
@@ -179,6 +207,7 @@ async def synthesize_speech(text: str, target_language_code: str, speaker: str =
                                                      # improves clarity for legal terms (RTI, FIR, Article 21)
             }
 
+            await tts_limiter.acquire()
             response = await client.post(
                 SARVAM_TTS_URL, headers=headers, json=payload, timeout=30.0
             )

@@ -45,6 +45,7 @@ DOMAIN_REASONING_EFFORT: dict[str, str | None] = {
     "consumer": None,   # Consumer forum steps are procedural & well-documented
     "senior":   None,   # Senior citizen maintenance procedures are straightforward
     "labor":    None,   # Labour law processes are procedural
+    "general":  None,   # General legal queries — keep fast
     # Complex / multi-step reasoning domains — minimal reasoning for accuracy
     "land":     "low",  # Property law requires cross-referencing multiple acts
     "police":   "low",  # FIR process + criminal procedure requires precise steps
@@ -53,6 +54,22 @@ DOMAIN_REASONING_EFFORT: dict[str, str | None] = {
     "women_dv": "low",  # DV Act + family law has multi-step remedies
     "complaint": "low", # Complaint drafting requires structured legal writing
 }
+
+# Domain-specific token limits — reasoning domains receive expanded token budgets
+DOMAIN_MAX_TOKENS: dict[str, int] = {
+    "land":       700,
+    "police":     650,
+    "cybercrime": 650,
+    "women_dv":   700,
+    "complaint":  800,
+    "rti":        450,
+    "health":     450,
+    "consumer":   500,
+    "senior":     450,
+    "labor":      500,
+    "general":    500,
+}
+
 
 
 @retry(
@@ -67,6 +84,7 @@ async def _call_sarvam_llm(
     document_context: str,
     conversation_history: list[dict] | None = None,
     reasoning_effort: str | None = None,
+    max_tokens: int = 1500,
 ) -> str:
     """
     Calls Sarvam AI's chat completions endpoint using Sarvam-30B with automatic retry logic.
@@ -100,7 +118,7 @@ async def _call_sarvam_llm(
     payload = {
         "model": "sarvam-30b",
         "messages": messages,
-        "max_tokens": 2000,
+        "max_tokens": max_tokens,
         "temperature": 0.3,
         "reasoning_effort": reasoning_effort,  # None=fastest Q&A, 'low'=complex legal analysis
     }
@@ -174,9 +192,10 @@ async def get_legal_response(
     # None = fastest (zero reasoning overhead) for simple factual domains
     # "low" = minimal reasoning for complex multi-step legal analysis
     reasoning_effort = DOMAIN_REASONING_EFFORT.get(resolved_category, "low")
+    max_tokens = DOMAIN_MAX_TOKENS.get(resolved_category, 500)
     logger.info(
-        "get_legal_response: category=%s reasoning_effort=%s",
-        resolved_category, reasoning_effort,
+        "get_legal_response: category=%s reasoning_effort=%s max_tokens=%d",
+        resolved_category, reasoning_effort, max_tokens,
     )
 
     if (
@@ -196,5 +215,6 @@ async def get_legal_response(
         document_context=extracted_document_text,
         conversation_history=conversation_history,
         reasoning_effort=reasoning_effort,
+        max_tokens=max_tokens,
     )
     return resolved_category, response_text

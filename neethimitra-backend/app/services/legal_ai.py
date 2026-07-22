@@ -5,6 +5,7 @@ import httpx
 import logging
 import time
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from app.utils.rate_limiter import llm_limiter, stt_limiter
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,32 @@ def normalise_to_11_lang(lang_code: str) -> str:
     return "en-IN"
 
 
+# ── Domain-aware reasoning_effort map ───────────────────────────────────────────
+# Source: Sarvam AI documentation answer to Q2:
+#   "Reserve higher reasoning_effort for genuinely complex eligibility reasoning,
+#    since reasoning tokens bill as completion tokens and add latency."
+#
+# reasoning_effort=None   → FASTEST, zero reasoning token overhead, ideal for
+#                           direct factual Q&A (RTI deadlines, helpline numbers).
+# reasoning_effort="low"  → minimal chain-of-thought, best for legal analysis
+#                           that benefits from lightweight structured reasoning
+#                           (property disputes, FIR procedure, multi-step law).
+DOMAIN_REASONING_EFFORT: dict[str, str | None] = {
+    # Simple / direct Q&A domains — fastest path, no reasoning overhead
+    "rti":      None,   # RTI Act 2005 deadlines & process are factual
+    "consumer": None,   # Consumer forum steps are procedural & well-documented
+    "senior":   None,   # Senior citizen maintenance procedures are straightforward
+    "labor":    None,   # Labour law processes are procedural
+    # Complex / multi-step reasoning domains — minimal reasoning for accuracy
+    "land":     "low",  # Property law requires cross-referencing multiple acts
+    "police":   "low",  # FIR process + criminal procedure requires precise steps
+    "cybercrime": "low", # Evidence preservation + cybercrime law is nuanced
+    "health":   "low",  # Medical negligence requires structured legal analysis
+    "women_dv": "low",  # DV Act + family law has multi-step remedies
+    "complaint": "low", # Complaint drafting requires structured legal writing
+}
+
+
 @retry(
     stop=stop_after_attempt(3),
     wait=wait_exponential(multiplier=1, min=1, max=8),
@@ -39,9 +66,11 @@ async def _call_sarvam_llm(
     user_message: str,
     document_context: str,
     conversation_history: list[dict] | None = None,
+    reasoning_effort: str | None = None,
 ) -> str:
     """
     Calls Sarvam AI's chat completions endpoint using Sarvam-30B with automatic retry logic.
+    reasoning_effort: None for simple Q&A (fastest), 'low' for complex legal analysis.
     """
     messages = [{"role": "system", "content": system_prompt}]
 
@@ -73,10 +102,12 @@ async def _call_sarvam_llm(
         "messages": messages,
         "max_tokens": 2000,
         "temperature": 0.3,
-        "reasoning_effort": "low",
+        "reasoning_effort": reasoning_effort,  # None=fastest Q&A, 'low'=complex legal analysis
     }
 
     start_time = time.time()
+    # Respect Sarvam Starter plan LLM rate limit (40 req/min; using 38 with buffer)
+    await llm_limiter.acquire()
     async with httpx.AsyncClient() as client:
         response = await client.post(
             SARVAM_CHAT_URL,
@@ -139,6 +170,14 @@ async def get_legal_response(
         resolved_category,
         CATEGORY_SYSTEM_PROMPTS.get("consumer", ""),
     )
+    # Select domain-aware reasoning_effort:
+    # None = fastest (zero reasoning overhead) for simple factual domains
+    # "low" = minimal reasoning for complex multi-step legal analysis
+    reasoning_effort = DOMAIN_REASONING_EFFORT.get(resolved_category, "low")
+    logger.info(
+        "get_legal_response: category=%s reasoning_effort=%s",
+        resolved_category, reasoning_effort,
+    )
 
     if (
         not settings.SARVAM_API_KEY
@@ -156,5 +195,6 @@ async def get_legal_response(
         user_message=english_query,
         document_context=extracted_document_text,
         conversation_history=conversation_history,
+        reasoning_effort=reasoning_effort,
     )
     return resolved_category, response_text

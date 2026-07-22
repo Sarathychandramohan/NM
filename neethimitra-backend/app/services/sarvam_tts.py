@@ -1,6 +1,7 @@
 import base64
 import logging
 import os
+import re
 import struct
 import uuid
 import httpx
@@ -14,6 +15,32 @@ SARVAM_TTS_URL = "https://api.sarvam.ai/text-to-speech"
 
 # Bulbul v3 supports the same 11-language set as Sarvam-30B and Mayura.
 # Any language outside this set is normalised to en-IN before the API call.
+
+
+def clean_for_tts(text: str) -> str:
+    """
+    Strip markdown formatting before passing text to Bulbul v3 TTS.
+
+    Bulbul v3 reads markdown symbols aloud ("hash hash", "asterisk", "dash")
+    which produces garbled audio output. Mayura has no built-in strip parameter
+    (Sarvam documentation Q4 answer), so we must clean client-side.
+
+    Source: Sarvam AI documentation answer to Q4 + prompt-level FORMAT RULE.
+    """
+    # Remove ATX headings: ### Title -> Title
+    text = re.sub(r'^#{1,6}\s*', '', text, flags=re.MULTILINE)
+    # Remove bold (**text**) and italic (*text*)
+    text = re.sub(r'\*{1,3}(.*?)\*{1,3}', r'\1', text)
+    # Remove bullet lines
+    text = re.sub(r'^\s*[-*\u2022]\s+', '', text, flags=re.MULTILINE)
+    # Remove numbered list markers (1. 2. -> 1) 2))
+    text = re.sub(r'^\s*(\d+)\.\s+', r'\1) ', text, flags=re.MULTILINE)
+    # Remove backtick code spans
+    text = re.sub(r'`{1,3}(.*?)`{1,3}', r'\1', text)
+    # Collapse multiple newlines to a pause-friendly period + space
+    text = re.sub(r'\n{2,}', '. ', text)
+    text = re.sub(r'\n', ' ', text)
+    return text.strip()
 
 
 def split_text_into_chunks(text: str, max_chars: int = 450) -> list[str]:
@@ -127,10 +154,8 @@ async def synthesize_speech(text: str, target_language_code: str, speaker: str =
     filename = f"tts_{uuid.uuid4().hex[:10]}.wav"
     filepath = os.path.join(audio_dir, filename)
 
-    # Cap at 5,000 characters overall. Bulbul v3 has no documented hard cap;
-    # we set 5,000 to stay reasonable. The chunker below handles the per-request
-    # 500-char limit, so any amount here is safe as long as it's chunked.
-    safe_text = text[:5000]
+    # Strip markdown before TTS — Bulbul v3 reads symbols aloud (Sarvam Q4 fix)
+    safe_text = clean_for_tts(text[:5000])
 
     # Chunk into ≤ 450-character segments (per-request limit is 500)
     chunks = split_text_into_chunks(safe_text, max_chars=450)

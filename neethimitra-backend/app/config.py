@@ -83,4 +83,24 @@ def is_production() -> bool:
 # Required API keys and client credentials will be validated dynamically during API requests to prevent startup crashes.
 
 
+# ── Sarvam Model Configuration (pinned — never use "latest" aliases) ───────────
+# Source: Sarvam AI documentation — models page + Q6 engineering answer
+# Pinning prevents silent regressions if Sarvam adds a new default.
+MODEL_CONFIG = {
+    "llm":         "sarvam-30b",   # Current production LLM (sarvam-m DEPRECATED 2026-07)
+    "stt":         "saaras:v3",    # Current production STT (streaming + REST)
+    "tts":         "bulbul:v3",    # Current production TTS (11-language set)
+    "translation": "mayura:v1",   # Current production translation model
+}
 
+# ── Sarvam Starter Plan Rate Limits (per-minute) ──────────────────────────────
+# Source: Sarvam AI documentation — Rate Limits page (Q5 answer)
+# Use (limit - 2) as effective ceiling to absorb burst variance.
+RATE_LIMITS = {
+    "llm_per_min": 38,      # Sarvam confirms 40/min; -2 buffer
+    "stt_rest_per_min": 58, # Sarvam confirms 60/min REST; -2 buffer
+    "stt_batch_per_min": 18,# Sarvam confirms 20/min batch; -2 buffer
+    # WebSocket concurrent stream limit: not documented — ask engineering team
+    # TTS per-min limit: not separately published — ask engineering team
+    # Mayura per-min limit: not separately published — ask engineering team
+}

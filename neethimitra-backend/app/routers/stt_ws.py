@@ -1,8 +1,11 @@
-﻿import io
+import io
 import logging
+
 import httpx
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+
 from app.config import settings
+from app.utils.rate_limiter import stt_limiter
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -41,6 +44,8 @@ async def stt_websocket(websocket: WebSocket):
 async def _transcribe_chunk(audio_bytes: bytes) -> str:
     if not settings.SARVAM_API_KEY:
         raise ValueError("SARVAM_API_KEY is not configured")
+    # Respect Sarvam STT REST rate limit (60 req/min; using 58 with buffer)
+    await stt_limiter.acquire()
     headers = {"api-subscription-key": settings.SARVAM_API_KEY}
     files = {"file": ("chunk.webm", io.BytesIO(audio_bytes), "audio/webm")}
     data = {"model": "saaras:v3", "language_code": "unknown", "mode": "transcribe"}
@@ -50,3 +55,4 @@ async def _transcribe_chunk(audio_bytes: bytes) -> str:
         logger.error("Sarvam STT chunk error %s: %s", response.status_code, response.text[:200])
         return ""
     return response.json().get("transcript", "")
+

@@ -136,10 +136,10 @@ export function RecordingOverlay() {
         // ── Start MediaRecorder, flush chunks to WS every 3s ────────────
         const mr = new MediaRecorder(stream);
         mr.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
-        mr.start(3000);  // timeslice=3000ms — triggers ondataavailable every 3s
+        mr.start(500);  // timeslice=500ms — Sarvam docs Q1: 100-500ms optimal for real-time STT
         mediaRecorderRef.current = mr;
 
-        // Send accumulated chunks to WS every 3s for live transcription
+        // Send accumulated chunks to WS every 500ms for live transcription
         chunkIntervalRef.current = setInterval(() => {
           if (chunksRef.current.length === 0) return;
           const ws = wsRef.current;
@@ -149,7 +149,7 @@ export function RecordingOverlay() {
           blob.arrayBuffer().then((buf) => {
             if (ws.readyState === WebSocket.OPEN) ws.send(buf);
           }).catch(() => {});
-        }, 3000);
+        }, 500);
 
       } catch {
         setTranscript('Microphone unavailable in browser');

@@ -89,41 +89,85 @@ async def create_complaint_pdf(
     version: int = 1,
 ) -> tuple[str, str]:
     """
-    Generates a versioned complaint PDF.
-    Filename includes the version number so repeated calls never overwrite previous drafts.
-    e.g., complaint_<session_id>_v1.pdf, complaint_<session_id>_v2.pdf ...
+    Generates a versioned formal complaint PDF.
+    Uses sarvam-30b to draft a formal Indian legal complaint letter based on session facts,
+    falling back to structured local assembly if the AI call fails.
     """
     safe_session_id = os.path.basename(session_id)
     draft_filename = f"complaint_{safe_session_id}_v{version}.pdf"
     dest_path = os.path.join(settings.PDF_DIR, draft_filename)
 
-    summary_parts = [
-        "This is a formal complaint drafted with assistance from NeethiMitra AI.",
-        f"The applicant reports an incident under category: {category}.",
-        "FACTS OF THE CASE:",
-    ]
+    # Attempt AI-powered formal legal drafting
+    summary_text = None
+    if settings.SARVAM_API_KEY and user_messages:
+        try:
+            import httpx
+            from app.services.legal_ai import SARVAM_CHAT_URL
 
-    if user_messages:
-        summary_parts.extend(f"{index}. {text}" for index, text in enumerate(user_messages, start=1))
-    else:
-        summary_parts.append("The applicant has requested formal drafting assistance based on the session record.")
+            messages_prompt = "\n".join([f"- {m}" for m in user_messages])
+            doc_prompt = "\n".join([f"Document Excerpt: {d[:500]}" for d in document_texts]) if document_texts else "None"
 
-    if document_texts:
-        summary_parts.append("")
-        summary_parts.append("SUPPORTING EVIDENCE:")
-        summary_parts.extend(
-            f"Exhibit {index}: {text[:300].replace(chr(10), ' ')}"
-            for index, text in enumerate(document_texts, start=1)
-        )
+            prompt = (
+                f"You are a formal legal drafting assistant for India.\n"
+                f"Draft a formal, structured legal complaint letter regarding a '{category}' incident.\n\n"
+                f"User Messages / Facts:\n{messages_prompt}\n\n"
+                f"Document Context:\n{doc_prompt}\n\n"
+                f"Instructions:\n"
+                f"1. Write in formal legal English.\n"
+                f"2. Include 3 distinct sections: FACTS OF THE CASE, RELEVANT LEGAL PROVISIONS, and RELIEF SOUGHT.\n"
+                f"3. Use numbered paragraphs for facts.\n"
+                f"4. Do NOT include markdown styling like **bold** or # headers — use plain uppercase headings."
+            )
 
-    summary_parts.extend(
-        [
+            async with httpx.AsyncClient() as client:
+                res = await client.post(
+                    SARVAM_CHAT_URL,
+                    headers={"api-subscription-key": settings.SARVAM_API_KEY, "Content-Type": "application/json"},
+                    json={
+                        "model": "sarvam-30b",
+                        "messages": [{"role": "system", "content": "You draft formal legal complaints for Indian authorities."}, {"role": "user", "content": prompt}],
+                        "max_tokens": 1200,
+                        "temperature": 0.2,
+                        "reasoning_effort": "low",
+                    },
+                    timeout=40.0,
+                )
+                if res.status_code == 200:
+                    data = res.json()
+                    choices = data.get("choices", [])
+                    if choices and choices[0].get("message", {}).get("content"):
+                        summary_text = choices[0]["message"]["content"].strip()
+        except Exception:
+            summary_text = None  # Fallback to local assembly below
+
+    # Fallback to local assembly if AI drafting wasn't used or failed
+    if not summary_text:
+        summary_parts = [
+            "This is a formal complaint drafted with assistance from NeethiMitra AI.",
+            f"The applicant reports an incident under category: {category}.",
             "",
-            "RELIEF SOUGHT:",
-            "The applicant requests appropriate inquiry, protection, refund, recovery, or other lawful relief from the competent authority.",
+            "FACTS OF THE CASE:",
         ]
-    )
-    summary_text = "\n".join(summary_parts)
+        if user_messages:
+            summary_parts.extend(f"{index}. {text}" for index, text in enumerate(user_messages, start=1))
+        else:
+            summary_parts.append("The applicant has requested formal drafting assistance based on the session record.")
+
+        if document_texts:
+            summary_parts.extend(["", "SUPPORTING EVIDENCE:"])
+            summary_parts.extend(
+                f"Exhibit {index}: {text[:300].replace(chr(10), ' ')}"
+                for index, text in enumerate(document_texts, start=1)
+            )
+
+        summary_parts.extend(
+            [
+                "",
+                "RELIEF SOUGHT:",
+                "The applicant requests appropriate inquiry, protection, refund, recovery, or other lawful relief from the competent authority.",
+            ]
+        )
+        summary_text = "\n".join(summary_parts)
 
     generate_pdf_file(filepath=dest_path, category=category, content=summary_text)
     return f"/static/complaints/{draft_filename}", summary_text

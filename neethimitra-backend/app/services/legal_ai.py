@@ -4,42 +4,20 @@ from app.config import settings
 import httpx
 import logging
 import time
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 logger = logging.getLogger(__name__)
 
 SARVAM_CHAT_URL = "https://api.sarvam.ai/v1/chat/completions"
 
 # ── Sarvam 11-language set ────────────────────────────────────────────────────
-# Sarvam-30B, Sarvam-105B, Mayura (translate), and Bulbul v3 (TTS) ALL support
-# exactly these 11 languages. Any language outside this set must be normalised
-# to "en-IN" before reaching these APIs to avoid a 400 Invalid Request error.
-#
-# Saaras v3 (STT) and Sarvam Vision (OCR) support a wider 23-language set but
-# our frontend selector already restricts to these 11, so no mismatch occurs.
 SARVAM_11_LANG_SET = frozenset({
-    "hi-IN",  # Hindi
-    "bn-IN",  # Bengali
-    "ta-IN",  # Tamil
-    "te-IN",  # Telugu
-    "gu-IN",  # Gujarati
-    "en-IN",  # English
-    "kn-IN",  # Kannada
-    "ml-IN",  # Malayalam
-    "mr-IN",  # Marathi
-    "pa-IN",  # Punjabi
-    "od-IN",  # Odia
+    "hi-IN", "bn-IN", "ta-IN", "te-IN", "gu-IN",
+    "en-IN", "kn-IN", "ml-IN", "mr-IN", "pa-IN", "od-IN",
 })
 
 
 def normalise_to_11_lang(lang_code: str) -> str:
-    """
-    Belt-and-suspenders guard: if a language code is outside Sarvam's 11-language
-    set (supported by Sarvam-30B / Mayura / Bulbul v3), fall back to English.
-
-    The frontend selector already only offers these 11 codes (confirmed in
-    languages.ts), so this guard fires only if a future code path passes an
-    unsupported code, preventing a hard 400 from Sarvam.
-    """
     if lang_code in SARVAM_11_LANG_SET:
         return lang_code
     logger.warning(
@@ -50,6 +28,12 @@ def normalise_to_11_lang(lang_code: str) -> str:
     return "en-IN"
 
 
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=1, max=8),
+    retry=retry_if_exception_type((httpx.RequestError, httpx.HTTPStatusError)),
+    reraise=True,
+)
 async def _call_sarvam_llm(
     system_prompt: str,
     user_message: str,
@@ -57,25 +41,10 @@ async def _call_sarvam_llm(
     conversation_history: list[dict] | None = None,
 ) -> str:
     """
-    Calls Sarvam AI's chat completions endpoint using Sarvam-30B.
-
-    Model history (important):
-      - "sarvam-m"   → DEPRECATED — Sarvam returns HTTP 400 as of 2026-07.
-                        Do not use.
-      - "sarvam-30b" → Current recommended model. Confirmed working 2026-07-13.
-      - "sarvam-105b"→ Larger alternative (same API shape, higher cost).
-
-    The LLM always receives English input and returns English output.
-    Translation to/from the user's regional language is handled separately
-    via translate_text() in the chat pipeline (_process_and_respond in chat.py).
-
-    conversation_history: list of dicts with keys 'role' ('user'|'assistant')
-    and 'content' (English text).  At most the last 5 pairs (10 messages) are
-    injected before the current query to keep the token budget predictable.
+    Calls Sarvam AI's chat completions endpoint using Sarvam-30B with automatic retry logic.
     """
     messages = [{"role": "system", "content": system_prompt}]
 
-    # Inject document context as a priming exchange (newest documents first)
     if document_context.strip():
         messages.append({
             "role": "user",
@@ -86,9 +55,8 @@ async def _call_sarvam_llm(
             "content": "Thank you. I have reviewed the document. Please ask your question."
         })
 
-    # Inject conversation history (last 5 pairs, oldest first)
     if conversation_history:
-        for turn in conversation_history[-10:]:   # 10 = 5 user + 5 assistant
+        for turn in conversation_history[-10:]:
             role = turn.get("role", "user")
             content = (turn.get("content") or "").strip()
             if role in ("user", "assistant") and content:
@@ -101,16 +69,11 @@ async def _call_sarvam_llm(
         "Content-Type": "application/json",
     }
     payload = {
-        "model": "sarvam-30b",   # sarvam-m is deprecated; sarvam-30b confirmed working 2026-07-13
+        "model": "sarvam-30b",
         "messages": messages,
-        "max_tokens": 2000,      # Raised from 1024: sarvam-30b uses internal reasoning tokens;
-                                 # 1024 was too low and caused reasoning to exhaust the budget
-                                 # before producing a final answer (content=null in response).
+        "max_tokens": 2000,
         "temperature": 0.3,
-        "reasoning_effort": "low",  # Sarvam-recommended for Q&A: prevents sarvam-30b from
-                                    # spending ALL tokens on internal chain-of-thought before
-                                    # emitting the actual answer (which produced content=null).
-                                    # "low" keeps minimal reasoning for legal analysis accuracy.
+        "reasoning_effort": "low",
     }
 
     start_time = time.time()
@@ -125,31 +88,28 @@ async def _call_sarvam_llm(
 
     if response.status_code != 200:
         logger.error("Sarvam LLM error %s: %s", response.status_code, response.text)
-        raise RuntimeError(f"Sarvam LLM returned {response.status_code}: {response.text}")
+        response.raise_for_status()
 
     data = response.json()
     choices = data.get("choices", [])
     if not choices:
         raise RuntimeError("Sarvam LLM returned no choices in response")
 
-    response_json = data
+    finish_reason = choices[0].get("finish_reason")
     content = choices[0].get("message", {}).get("content")
     if content is None:
-        # sarvam-30b can return content=null when internal reasoning consumes
-        # the full max_tokens budget before producing a final answer.
-        # Log the entire raw response so we can inspect finish_reason and
-        # any reasoning_content field that might be populated instead.
         logger.error(
-            "Sarvam LLM returned null content (reasoning-only response?). "
-            "finish_reason=%s full_response=%s",
-            choices[0].get("finish_reason", "unknown"),
-            response_json,
+            "Sarvam LLM returned null content. finish_reason=%s full_response=%s",
+            finish_reason, data,
         )
-        raise RuntimeError(
-            "Sarvam LLM returned no content "
-            "(model exhausted token budget on reasoning — try rephrasing your question)"
-        )
-    return content.strip()
+        raise RuntimeError("Sarvam LLM returned no content (model exhausted token budget).")
+
+    content_str = content.strip()
+    if finish_reason == "length":
+        logger.warning("Sarvam LLM response was truncated due to max_tokens limit.")
+        content_str += "\n\n[Note: Response truncated due to length limits. Please ask if you need further details.]"
+
+    return content_str
 
 
 async def get_legal_response(

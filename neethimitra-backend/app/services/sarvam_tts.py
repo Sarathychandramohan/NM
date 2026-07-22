@@ -79,13 +79,13 @@ def concatenate_wav_files(wav_chunks: list[bytes]) -> bytes:
 
 
 # Bulbul v3 valid speakers (confirmed from production API error 2026-07-21):
-# "meera" was removed from Sarvam's speaker list — using "anushka" as new default.
+# "meera" was removed from Sarvam's speaker list — using "ishita" as new default.
 # Female: anushka, manisha, vidya, arya, ritu, priya, neha, pooja, simran, kavya,
 #          ishita, shreya, roopa, suhani, kavitha, rupali, tanya, shruti, mani
 # Male:   abhilash, karun, hitesh, aditya, rahul, rohan, amit, dev, ratan, varun,
 #          manan, sumit, kabir, aayan, shubh, ashutosh, advait, anand, tarun, sunny,
 #          gokul, vijay, mohit, rehan, soham
-DEFAULT_SPEAKER = "anushka"
+DEFAULT_SPEAKER = "ishita"
 
 
 async def synthesize_speech(text: str, target_language_code: str, speaker: str = DEFAULT_SPEAKER) -> str:

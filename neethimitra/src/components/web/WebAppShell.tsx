@@ -19,7 +19,7 @@ import { safeImpact } from '@/utils/haptics';
 import * as Haptics from 'expo-haptics';
 import { UI_TRANSLATIONS } from '@constants/translations';
 import {
-  Home, Clock, FolderClosed, User, Mic,
+  Home, Clock, FolderClosed, User, Mic, PhoneCall,
   Globe, LogOut, ChevronRight, ChevronLeft, ChevronDown, Check, Plus,
   Home as HomeIcon, Briefcase, ShieldAlert, Heart, Scale, MessageSquare,
   ArrowLeft, Search, Trash2,
@@ -317,8 +317,8 @@ function WebSidebar({
 
   const NAV_ITEMS = [
     { label: t.home,        icon: Home,         route: '/(tabs)',               active: pathname === '/' || pathname === '/(tabs)' || pathname === '/index' },
-    { label: t.chatHistory, icon: Clock,        route: '/(tabs)/chat-history',  active: pathname.includes('chat-history') },
     { label: t.myFiles,     icon: FolderClosed, route: '/(tabs)/my-files',      active: pathname.includes('my-files') },
+    { label: t.helplines || 'Helplines', icon: PhoneCall, route: '/helplines',  active: pathname.includes('helplines') },
     { label: t.profile,     icon: User,         route: '/(tabs)/profile',       active: pathname.includes('profile') },
   ];
 

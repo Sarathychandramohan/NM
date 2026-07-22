@@ -102,57 +102,25 @@ export default function ProfileScreen() {
             </TouchableOpacity>
           ),
         },
-        {
-          label: t.textSize,
-          Icon: Type,
-          right: (
-            <View style={{ flexDirection: 'row', gap: 6 }}>
-              {(['small', 'medium', 'large'] as const).map((sz) => (
-                <TouchableOpacity
-                  key={sz}
-                  onPress={() => setTextSize(sz)}
-                  style={{
-                    paddingHorizontal: 8,
-                    paddingVertical: 4,
-                    borderRadius: 12,
-                    backgroundColor: textSize === sz ? Colors.orange : (isDarkMode ? '#1E1E23' : '#F3F4F6'),
-                    borderWidth: 1,
-                    borderColor: textSize === sz ? Colors.orange : (isDarkMode ? '#333' : '#E5E7EB'),
-                  }}
-                >
-                  <Text style={{
-                    fontSize: 11,
-                    fontFamily: 'PlusJakartaSans_700Bold',
-                    color: textSize === sz ? '#FFF' : C.textSecondary,
-                  }}>
-                    {t[sz]}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          ),
         },
       ],
     },
     {
-      section: t.aboutLegal,
+      section: t.aboutLegal || 'About & Legal',
       items: [
         {
-          label: t.aboutApp,
+          label: t.aboutApp || 'About NeethiMitra',
           Icon: Info,
-          onPress: () => showAlert(t.aboutApp, 'NeethiMitra AI v1.0\nProviding free legal guidance to citizens across India.'),
-          right: <ChevronRight size={15} color={C.textHint} strokeWidth={1.5} />
+          onPress: () => {},
+          right: <Text style={{ fontSize: 12, color: C.textSecondary, fontFamily: 'PlusJakartaSans_600SemiBold' }}>v1.0.0</Text>
         },
         {
-          label: t.privacyPolicy,
+          label: t.privacyPolicy || 'Privacy & Security',
           Icon: Shield,
-          onPress: () => showAlert(t.privacyPolicy, 'Your data is secured locally and processed in compliance with Indian privacy laws.'),
-          right: <ChevronRight size={15} color={C.textHint} strokeWidth={1.5} />
-        },
-        {
-          label: t.legalDisclaimer,
-          Icon: Scale,
-          onPress: () => showAlert(t.legalDisclaimer, 'This app provides AI-powered legal information, not formal legal advice. Consult a lawyer for legal representation.'),
+          onPress: () => {
+            const { openBrowserAsync } = require('expo-web-browser');
+            openBrowserAsync('https://github.com/Sarathychandramohan/NM').catch(() => {});
+          },
           right: <ChevronRight size={15} color={C.textHint} strokeWidth={1.5} />
         },
       ],
@@ -291,6 +259,21 @@ export default function ProfileScreen() {
             </View>
           </View>
         ))}
+
+        {/* ── Legal Disclaimer Footer Card ── */}
+        <View style={{ paddingHorizontal: 16, marginTop: 8, marginBottom: 20 }}>
+          <View style={{
+            backgroundColor: isDarkMode ? '#18181B' : '#F9FAFB',
+            borderColor: C.surfaceBorder,
+            borderWidth: 1, borderRadius: 14, padding: 14,
+            flexDirection: 'row', alignItems: 'flex-start', gap: 10,
+          }}>
+            <Scale size={16} color={Colors.orange} strokeWidth={1.8} style={{ marginTop: 2 }} />
+            <Text style={{ fontSize: 11 * scale, color: C.textSecondary, fontFamily: 'PlusJakartaSans_400Regular', flex: 1, lineHeight: 16 }}>
+              {t.legalDisclaimer || 'NeethiMitra AI provides automated legal information to assist citizens. It does not constitute formal legal representation. Always consult a qualified lawyer for official legal actions.'}
+            </Text>
+          </View>
+        </View>
 
         <View style={{ height: 100 }} />
       </ScrollView>

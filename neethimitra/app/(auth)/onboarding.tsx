@@ -26,8 +26,8 @@ const SLIDES = [
     Icon: Landmark, color: Colors.green,
   },
   {
-    key: 's3', title: 'Draft Your Complaint',
-    desc: 'Generate RTI requests, FIR drafts, and legal complaints as PDFs — ready to sign and submit.',
+    key: 's3', title: 'Draft & File Complaints',
+    desc: 'Get step-by-step guidance on filing police complaints, RTI requests, and resolving legal queries.',
     Icon: Award, color: '#2563EB',
   },
 ];

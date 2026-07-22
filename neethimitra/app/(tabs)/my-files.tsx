@@ -1,6 +1,6 @@
 import React from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet, ScrollView, Platform, Linking, Alert
+  View, Text, TouchableOpacity, StyleSheet, ScrollView, Platform, Linking, Alert, RefreshControl
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -37,6 +37,16 @@ export default function DocumentsScreen() {
 
   const [isUploading, setIsUploading] = React.useState(false);
   const [uploadError, setUploadError] = React.useState<string | null>(null);
+  const [refreshing, setRefreshing] = React.useState(false);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      const { fetchSessions } = useAppStore.getState();
+      await fetchSessions();
+    } catch {}
+    setRefreshing(false);
+  };
 
   // Navigate to the auto-created document chat session
   const handleOpenDocumentSession = async () => {
@@ -169,7 +179,18 @@ export default function DocumentsScreen() {
     <SafeAreaView style={[styles.container, { backgroundColor: C.background }]} edges={['bottom']}>
       <TopAppBar title={t.documentsHeader} showBack={false} />
 
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            colors={[Colors.orange]}
+            tintColor={Colors.orange}
+          />
+        }
+      >
         {/* Page title */}
         <View style={styles.titleRow}>
           <Text style={[styles.pageTitle, { color: C.text, fontSize: 18 * scale }]} adjustsFontSizeToFit={true} minimumFontScale={0.8} numberOfLines={1}>{t.documentsHeader}</Text>

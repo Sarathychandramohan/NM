@@ -613,35 +613,12 @@ export default function ChatScreen() {
           </View>
         </View>
 
-        {/* History toggle button */}
-        <TouchableOpacity
-          onPress={() => setShowHistory((v) => !v)}
-          style={[
-            styles.historyBtn,
-            {
-              backgroundColor: showHistory
-                ? (isDarkMode ? 'rgba(249,115,22,0.2)' : '#FFF7ED')
-                : (isDarkMode ? '#1E1E23' : '#F3F4F6'),
-              borderColor: showHistory ? Colors.orange + '60' : C.surfaceBorder,
-            },
-          ]}
-          activeOpacity={0.75}
-        >
-          <History size={16} color={showHistory ? Colors.orange : C.textSecondary} strokeWidth={1.8} />
-        </TouchableOpacity>
+        </View>
       </View>
       )}
 
-      {/* ── Main layout: chat + optional history sidebar (web) ────── */}
-      <View style={[styles.mainRow, isWeb && showHistory && styles.mainRowWithSidebar]}>
-        {/* ── Web: inline history sidebar ───────────────────────── */}
-        {isWeb && showHistory && (
-          <ChatHistorySidebar
-            isOpen={true}
-            onClose={() => setShowHistory(false)}
-            currentCategoryId={category.id}
-          />
-        )}
+      {/* ── Main layout: chat ────────────────────────────────────────── */}
+      <View style={styles.mainRow}>
 
         <KeyboardAvoidingView
           style={{ flex: 1 }}
@@ -859,15 +836,6 @@ export default function ChatScreen() {
         </View>
         </KeyboardAvoidingView>
       </View>
-
-      {/* ── Mobile: overlay history sidebar ──────────────────────── */}
-      {!isWeb && (
-        <ChatHistorySidebar
-          isOpen={showHistory}
-          onClose={() => setShowHistory(false)}
-          currentCategoryId={category.id}
-        />
-      )}
 
       {/* ── Document / image upload overlay ─────────────────────── */}
       <DocumentUpload

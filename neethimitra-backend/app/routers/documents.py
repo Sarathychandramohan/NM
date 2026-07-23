@@ -13,6 +13,14 @@ from app.database import SessionLocal, get_db
 from app.models import Document, Message, Session as DBSession, User
 from app.schemas import DocumentResponse
 from app.services.sarvam_vision import extract_text_from_document
+from app.services.document_analysis import (
+    classify_document_type,
+    extract_document_entities,
+    analyze_document_with_llm,
+    calculate_document_confidence,
+    DocumentType,
+)
+from app.services.document_monitor import doc_monitor
 from app.services.session_support import build_session_event, mark_session_active, summarize_text, utcnow
 from app.core.security import sign_file_url
 
@@ -68,31 +76,69 @@ async def _process_document_async(
     since this runs outside the HTTP request-response lifecycle.
     """
     db = SessionLocal()
+    start_time = time.time()
+    job_id = f"doc_{document_id}_{uuid.uuid4().hex[:6]}"
+
     try:
         db_doc = db.query(Document).filter(Document.id == document_id).first()
         if not db_doc:
             return
 
+        # Track telemetry job start
+        doc_monitor.track_job_start(
+            job_id=job_id,
+            user_id=str(db_doc.user_id),
+            metadata={"document_type": "pending", "file_size": len(file_content)},
+        )
+        doc_monitor.track_job_start_processing(job_id)
+
         db_doc.analysis_status = "processing"
         db_doc.analysis_provider = "sarvam_vision"
         db.commit()
 
+        entities: dict = {}
+        analysis: dict = {}
+        doc_type: DocumentType = DocumentType.GENERAL_LEGAL
+
         try:
-            # Native await — no asyncio.run() needed; this function is async def
+            # Step 1: Sarvam Vision OCR Extraction
             extracted_markdown = await extract_text_from_document(
                 file_bytes=file_content,
                 filename=original_filename,
                 mime_type=mime_type or "application/pdf",
             )
+
+            # Step 2: Intelligent Classification & Entity Extraction
+            doc_type = classify_document_type(original_filename, extracted_markdown)
+            entities = extract_document_entities(extracted_markdown)
+
+            # Step 3: Sarvam-30B Structured Legal Analysis
+            analysis = await analyze_document_with_llm(extracted_markdown, doc_type)
+            conf = calculate_document_confidence(extracted_markdown, analysis)
+
             db_doc.analysis_status = "completed"
             db_doc.extracted_text = extracted_markdown
             db_doc.extracted_summary = summarize_text(extracted_markdown)
             db_doc.analysis_error = None
+
+            # Store entities + analysis in meta_json
+            import json as _json
+            db_doc.meta_json = _json.dumps({
+                "document_type": doc_type.value,
+                "entities": entities,
+                "analysis": analysis,
+                "confidence": conf,
+            })
+
+            elapsed = time.time() - start_time
+            doc_monitor.track_job_complete(job_id, elapsed)
+
         except Exception as exc:
             tb = traceback.format_exc()
             logger.exception("Document processing failed for ID %s (%s): %s", document_id, original_filename, str(exc))
             db_doc.analysis_status = "failed"
             db_doc.analysis_error = f"{str(exc)}\n{tb}"
+            doc_monitor.track_job_failed(job_id, str(exc))
 
         db_doc.processed_at = utcnow()
 
@@ -101,40 +147,24 @@ async def _process_document_async(
         target_session = orig_session
 
         if db_doc.analysis_status == "completed":
-            # Infer category and session type
-            fn_lower = original_filename.lower()
-            if any(k in fn_lower for k in ["fir", "complaint", "police", "arrest"]):
-                doc_type = "FIR Copy"
-                session_type = "complaint_draft"
-                category = "police"
-                action_text = "I can help you draft a complaint based on this FIR, or explain your rights here."
-            elif any(k in fn_lower for k in ["medical", "bill", "hospital", "health", "doctor", "prescription"]):
-                doc_type = "Medical Bills"
-                session_type = "bill_query"
-                category = "health"
-                action_text = "I can help you query this bill for overcharging, explain medical rights, or verify insurance guidelines."
-            elif any(k in fn_lower for k in ["rti", "info", "reply", "government", "govt"]):
-                doc_type = "RTI Reply"
-                session_type = "chat"
-                category = "rti"
-                action_text = "I can help you analyze this RTI response, explain legal implications, or draft a first/second appeal."
-            elif any(k in fn_lower for k in ["land", "property", "patta", "chitta", "deed", "registration", "adangal"]):
-                doc_type = "Land Records"
-                session_type = "chat"
-                category = "land"
-                action_text = "I can help you review this land record, explain registry requirements, or prepare mutation documents."
-            elif any(k in fn_lower for k in ["aadhaar", "id", "card"]):
-                doc_type = "Aadhaar"
-                session_type = "form_fill"
-                category = "general"
-                action_text = "I can assist in pre-filling applications or verify your identity rights under current legal guidelines."
-            else:
-                doc_type = "Court Notice" if "notice" in fn_lower else "Legal Document"
-                session_type = "chat"
-                category = "general"
-                action_text = "I can help analyze this document, clarify complex legal jargon, or guide you on next actions."
+            # Map DocumentType to category and action prompt
+            category_mapping = {
+                DocumentType.CRIMINAL_CASE: ("police", "complaint_draft", "I can help draft a complaint/FIR response or explain legal rights."),
+                DocumentType.DOMESTIC_VIOLENCE: ("women_dv", "chat", "I can guide you on domestic violence protection orders and legal remedies."),
+                DocumentType.PROPERTY_DOCUMENT: ("land", "chat", "I can review land records, registry rules, or mutation documents."),
+                DocumentType.LABOR_DISPUTE: ("labor", "chat", "I can help verify labor rights, gratuity rules, or termination notices."),
+                DocumentType.CYBER_CRIME: ("cybercrime", "chat", "I can assist with IT Act reporting and online fraud complaints."),
+                DocumentType.FAMILY_LAW: ("general", "chat", "I can guide you through maintenance, custody, or family law rules."),
+                DocumentType.COURT_NOTICE: ("general", "chat", "I can analyze this court summons, explain deadlines, and guide next steps."),
+                DocumentType.LEGAL_AID_FORM: ("rti", "form_fill", "I can assist in applying for free legal aid under Section 12."),
+            }
 
-            session_title = f"{doc_type} — {session_type.replace('_', ' ').title()}"
+            cat, s_type, act_text = category_mapping.get(
+                doc_type,
+                ("general", "chat", "I can help analyze this legal document, clarify jargon, and guide your next steps.")
+            )
+
+            session_title = f"{doc_type.value.replace('_', ' ').title()} — {original_filename[:25]}"
 
             # Create a brand new linked chat session for this document
             new_session_id = str(uuid.uuid4())
@@ -142,9 +172,9 @@ async def _process_document_async(
                 id=new_session_id,
                 user_id=db_doc.user_id,
                 title=session_title,
-                category=category,
+                category=cat,
                 language_code=session_language,
-                session_type=session_type,
+                session_type=s_type,
                 source_document_id=db_doc.id,
                 source="document",
                 is_active=True,
@@ -167,16 +197,39 @@ async def _process_document_async(
                 "active" if db_doc.analysis_status == "completed" else "document_attention",
             )
 
-            # Auto-generate welcome message
+            # Auto-generate rich welcome message
             if db_doc.analysis_status == "completed":
+                # Build extracted entities display block
+                ent_lines = []
+                if entities.get("case_numbers"):
+                    ent_lines.append(f"• **Case/FIR No:** {', '.join(entities['case_numbers'])}")
+                if entities.get("court_names"):
+                    ent_lines.append(f"• **Court:** {', '.join(entities['court_names'])}")
+                if entities.get("section_numbers"):
+                    ent_lines.append(f"• **Legal Sections:** {', '.join(entities['section_numbers'])}")
+                if entities.get("amounts"):
+                    ent_lines.append(f"• **Amounts Mentioned:** {', '.join(entities['amounts'])}")
+
+                entities_block = "\n".join(ent_lines) if ent_lines else "No specific case numbers or sections detected."
+
+                key_issues_list = analysis.get("key_issues", [])
+                next_steps_list = analysis.get("next_steps", [])
+
+                issues_str = "\n".join([f"1. {issue}" for issue in key_issues_list[:3]]) if key_issues_list else db_doc.extracted_summary
+                next_steps_str = "\n".join([f"- {step}" for step in next_steps_list[:3]]) if next_steps_list else "Consult a qualified advocate for specific advice."
+
                 welcome_content = (
-                    f"Document '{original_filename}' processed successfully.\n\n"
-                    f"**Summary of Extracted Information:**\n"
-                    f"{db_doc.extracted_summary or 'No summary could be generated.'}\n\n"
-                    f"{action_text}"
+                    f"📄 **Document Processed Successfully** ({doc_type.value.replace('_', ' ').title()})\n\n"
+                    f"**Extracted Legal Entities:**\n"
+                    f"{entities_block}\n\n"
+                    f"**Key Issues Identified:**\n"
+                    f"{issues_str}\n\n"
+                    f"**Recommended Next Steps:**\n"
+                    f"{next_steps_str}\n\n"
+                    f"{act_text}"
                 )
             else:
-                welcome_content = f"Document '{original_filename}' was uploaded, but I couldn't read this document."
+                welcome_content = f"Document '{original_filename}' was uploaded, but OCR processing encountered an issue."
 
             db.add(
                 Message(
@@ -200,6 +253,7 @@ async def _process_document_async(
                         "document_id": db_doc.id,
                         "filename": original_filename,
                         "analysis_status": db_doc.analysis_status,
+                        "document_type": doc_type.value if db_doc.analysis_status == "completed" else "unknown",
                     },
                 )
             )

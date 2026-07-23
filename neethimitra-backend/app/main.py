@@ -127,6 +127,7 @@ app.include_router(complaints.router)
 app.include_router(helplines.router)
 app.include_router(files.router)
 app.include_router(monitoring.router)
+app.include_router(monitoring.doc_monitoring_router) # Document monitoring — /api/monitoring/health & /stats
 app.include_router(stt_ws.router)   # WebSocket STT streaming — /ws/stt
 app.include_router(voices.router)   # Voice selection — /api/voices, /api/tts/test
 

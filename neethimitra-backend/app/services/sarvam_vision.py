@@ -8,8 +8,11 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 SARVAM_BASE = "https://api.sarvam.ai"
-POLL_INTERVAL_SECONDS = 3
-MAX_POLL_ATTEMPTS = 40  # 40 × 3 s = 120 s max wait
+# Adaptive polling: starts at 2 s, doubles each attempt, caps at 10 s.
+# Reduces unnecessary calls for small docs while still handling large PDFs.
+_POLL_INITIAL_INTERVAL = 2
+_POLL_MAX_INTERVAL = 10
+_POLL_MAX_TOTAL_SECONDS = 120  # abort after 2 minutes
 
 
 def _headers() -> dict:
@@ -92,9 +95,23 @@ async def _start_job(client: httpx.AsyncClient, job_id: str) -> None:
 
 
 async def _poll_status(client: httpx.AsyncClient, job_id: str) -> list[str]:
-    """Step 5: Poll job status until Completed. Returns list of output filenames."""
-    for attempt in range(MAX_POLL_ATTEMPTS):
-        await asyncio.sleep(POLL_INTERVAL_SECONDS)
+    """
+    Step 5: Poll job status with adaptive exponential backoff.
+
+    Strategy (recommended by Sarvam AI engineering):
+    - Start fast (2 s) for images/small PDFs that process quickly.
+    - Back off exponentially (2→4→8→10→10 s…) for large PDFs.
+    - Abort after _POLL_MAX_TOTAL_SECONDS to prevent indefinite blocking.
+    """
+    elapsed = 0
+    interval = _POLL_INITIAL_INTERVAL
+    attempt = 0
+
+    while elapsed < _POLL_MAX_TOTAL_SECONDS:
+        await asyncio.sleep(interval)
+        elapsed += interval
+        attempt += 1
+
         response = await client.get(
             f"{SARVAM_BASE}/doc-digitization/job/v1/{job_id}/status",
             headers=_headers(),
@@ -105,13 +122,30 @@ async def _poll_status(client: httpx.AsyncClient, job_id: str) -> list[str]:
         state = data.get("job_state", "")
 
         if state == "Completed":
+            logger.info(
+                "Sarvam Vision job %s: completed in ~%ds (%d polls)",
+                job_id,
+                elapsed,
+                attempt,
+            )
             return data.get("output_files", [])
         if state == "Failed":
             raise RuntimeError(f"Sarvam Vision job failed: {data}")
-        # InProgress → keep polling
-        logger.debug("Sarvam Vision job %s: attempt %d/%d state=%s", job_id, attempt + 1, MAX_POLL_ATTEMPTS, state)
 
-    raise RuntimeError("Sarvam Vision job timed out after 120 seconds.")
+        # Still in progress — back off, cap at max interval
+        logger.debug(
+            "Sarvam Vision job %s: poll %d elapsed=%ds state=%s next_wait=%ds",
+            job_id,
+            attempt,
+            elapsed,
+            state,
+            min(interval * 2, _POLL_MAX_INTERVAL),
+        )
+        interval = min(interval * 2, _POLL_MAX_INTERVAL)
+
+    raise RuntimeError(
+        f"Sarvam Vision job {job_id} timed out after {_POLL_MAX_TOTAL_SECONDS}s ({attempt} polls)."
+    )
 
 
 async def _get_download_url(client: httpx.AsyncClient, job_id: str, output_filename: str) -> str:

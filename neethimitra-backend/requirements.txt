@@ -18,3 +18,6 @@ email-validator>=2.0.0
 requests>=2.31.0
 bcrypt==3.2.0
 tenacity>=8.2.0
+# Audio transcoding — converts browser WebM/Opus chunks to WAV for Saaras v3
+pydub>=0.25.1
+av>=12.0.0

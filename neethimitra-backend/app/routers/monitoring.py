@@ -1,4 +1,4 @@
-﻿import os
+import os
 import logging
 from fastapi import APIRouter, Header, HTTPException
 
@@ -21,11 +21,11 @@ MONITOR_SECRET = os.getenv("MONITOR_SECRET", "neethimitra_internal_monitor_secre
 
 @router.get("/rate-limits")
 async def rate_limit_status(x_monitor_key: str = Header(...)):
-    \"\"\"
+    """
     Internal monitoring endpoint.
     Call this from Render dashboard or uptime monitor.
     Protected by secret header (X-Monitor-Key).
-    \"\"\"
+    """
     if x_monitor_key != MONITOR_SECRET:
         raise HTTPException(status_code=403, detail="Forbidden")
 

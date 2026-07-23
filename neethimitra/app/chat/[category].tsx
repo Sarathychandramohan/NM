@@ -676,8 +676,6 @@ export default function ChatScreen() {
             </Text>
           </View>
         </View>
-
-        </View>
       </View>
       )}
 

@@ -23,7 +23,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import ensure_storage_dirs, settings
-from app.routers import auth, chat, complaints, documents, files, helplines, monitoring, sessions, stt_ws, voices
+from app.routers import auth, chat, complaints, documents, files, helplines, monitoring, sessions, stt_ws, voices, security, analytics, workflows
 from app.database import SessionLocal
 from app.services.helpline_seeder import seed_helplines
 from app.utils.rate_limiter import per_user_llm, per_user_stt, per_user_tts
@@ -130,6 +130,9 @@ app.include_router(monitoring.router)
 app.include_router(monitoring.doc_monitoring_router) # Document monitoring — /api/monitoring/health & /stats
 app.include_router(stt_ws.router)   # WebSocket STT streaming — /ws/stt
 app.include_router(voices.router)   # Voice selection — /api/voices, /api/tts/test
+app.include_router(security.router) # Security & API key management
+app.include_router(analytics.router) # Advanced Analytics & Practice Management
+app.include_router(workflows.router) # Legal Templates & Workflows
 
 
 

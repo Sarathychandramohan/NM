@@ -1,17 +1,19 @@
 import logging
 
 from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import OAuth2PasswordBearer, APIKeyHeader
 from jose import JWTError, jwt
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
 from app.models import User
+from app.services.api_key_service import verify_user_api_key
 
 logger = logging.getLogger(__name__)
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
+api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 
 def _get_or_create_dev_user(db: Session) -> User:
@@ -99,27 +101,43 @@ def _decode_user_from_token(token: str | None, db: Session) -> User | None:
 
 def get_current_user(
     token: str = Depends(oauth2_scheme),
+    x_api_key: str = Depends(api_key_header),
     db: Session = Depends(get_db),
 ) -> User:
     """
-    Resolves the current user from the Bearer token.
-
-    In development mode (ENVIRONMENT=development):
-      - If a valid token is provided, it is decoded normally.
-      - If no token is provided, a local dev user (ID=1) is used as fallback.
-    
-    In production mode (ENVIRONMENT=production):
-      - A valid Bearer token is always required. No fallback exists.
+    Resolves the current user.
+    Supports two authentication layers:
+      1. Programmatic access: X-API-Key header (verifies key in database)
+      2. Regular client: Bearer JWT token (jose decode)
+      
+    In development mode, falls back to dev user if neither is present.
     """
     logger.info(
-        "get_current_user called — env=%s token_present=%s",
+        "get_current_user called — env=%s token_present=%s api_key_present=%s",
         settings.ENVIRONMENT,
         bool(token),
+        bool(x_api_key),
     )
 
-    if settings.ENVIRONMENT == "development":
-        token_user = _decode_user_from_token(token, db)
-        return token_user or _get_or_create_dev_user(db)
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+    # 1. Check for API Key first (programmatic access)
+    if x_api_key:
+        api_user = verify_user_api_key(db, x_api_key)
+        if api_user:
+            logger.info("get_current_user: authenticated via API Key, user_id=%s", api_user.id)
+            return api_user
+        else:
+            logger.warning("get_current_user: invalid API key provided")
+            raise credentials_exception
+
+    # 2. Check for Bearer token fallback in Dev, strict in Prod
+    if settings.ENVIRONMENT == "development" and not token:
+        return _get_or_create_dev_user(db)
 
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -159,3 +177,28 @@ def require_real_user(current_user: User = Depends(get_current_user)) -> User:
             detail="This feature requires a registered account. Please sign in to continue.",
         )
     return current_user
+
+
+def require_roles(allowed_roles: list[str]):
+    """
+    Role-Based Access Control (RBAC) dependency.
+    Protects sensitive admin/legal endpoints based on User.role values
+    (e.g., 'admin', 'lawyer', 'paralegal', 'client', 'viewer').
+    """
+    def dependency(current_user: User = Depends(require_real_user)) -> User:
+        user_role = getattr(current_user, "role", "user") or "user"
+        # Support both 'client' and 'user' as default roles for standard users
+        normalized_role = "client" if user_role == "user" else user_role
+        
+        # Check if the role matches any allowed role
+        if normalized_role not in allowed_roles:
+            logger.warning(
+                "Access denied for user_id=%s: role '%s' not in allowed %s",
+                current_user.id, normalized_role, allowed_roles
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Access denied: this resource requires one of the roles: {allowed_roles}"
+            )
+        return current_user
+    return dependency

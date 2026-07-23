@@ -40,6 +40,7 @@ class User(Base):
     refresh_tokens = relationship("RefreshToken", back_populates="user", cascade="all, delete-orphan")
     session_events = relationship("SessionEvent", back_populates="user", cascade="all, delete-orphan")
     auth_sessions = relationship("AuthSession", back_populates="user", cascade="all, delete-orphan")
+    api_keys = relationship("ApiKey", back_populates="user", cascade="all, delete-orphan")
 
 
 class RefreshToken(Base):
@@ -183,3 +184,17 @@ class AuthSession(Base):
     is_active = Column(Boolean, default=True)
 
     user = relationship("User", back_populates="auth_sessions")
+
+
+class ApiKey(Base):
+    __tablename__ = "api_keys"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    key = Column(String(255), unique=True, index=True, nullable=False)
+    is_active = Column(Boolean, default=True)
+    description = Column(String(255), nullable=True)
+    created_at = Column(DateTime, default=get_utc_now)
+    last_used_at = Column(DateTime, nullable=True)
+
+    user = relationship("User", back_populates="api_keys")

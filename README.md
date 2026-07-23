@@ -1,450 +1,205 @@
-# NeethiMitra AI (Justice Friend) — Complete Project Documentation
-> **Hackathon Entry:** Sarvam AI Hackathon 
-> **Sponsors:** Sarvam AI + Render + Expo
-> **Target Audience:** Indian citizens needing regional language, voice-first, and document-supported legal aid.
+﻿# NeethiMitra AI (Justice Friend) — Complete Project Documentation
 
-NeethiMitra AI is a mobile-first, voice-first legal assistance platform designed for Indian citizens who cannot afford lawyers. It provides instantaneous legal guidance in local Indian languages, processes uploaded evidence (receipts, notices, agreements) via document intelligence, and drafts official, print-ready complaint PDFs for local police stations or consumer forums.
+> **Hackathon Entry:** Sarvam AI Hackathon  
+> **Sponsors:** Sarvam AI + Render + Expo  
+> **Target Audience:** Indian citizens requiring regional language, voice-first, and document-supported emergency legal assistance.
 
----
-
-## 1. PROJECT OVERVIEW & TARGET AUDIENCE
-
-The application is structured around **6 core emergency legal categories** common to citizens needing immediate help:
-
-| # | Category | Target Users | Key Legal Context / Act |
-|---|----------|-------------|-------------------------|
-| 1 | **Cyber Fraud** | Scam / OTP fraud victims | IT Act 2000, Section 66C & 66D |
-| 2 | **Domestic Violence** | Abuse survivors | Protection of Women from Domestic Violence Act, 2005 |
-| 3 | **Land Dispute** | Property conflict victims | Transfer of Property Act 1882, CPC Section 80 |
-| 4 | **Labor & Wage** | Cheated workers | Payment of Wages Act 1936, Industrial Disputes Act 1947 |
-| 5 | **Consumer Rights** | Product/service fraud victims | Consumer Protection Act 2019 |
-| 6 | **Senior Citizen Protection** | Elderly abuse victims | Maintenance & Welfare of Parents and Senior Citizens Act 2007 |
+NeethiMitra AI is a web-first and mobile-first, voice-enabled legal assistance platform designed to empower Indian citizens who lack access to legal counsel. It provides real-time, simplified legal guidance in 11 Indian regional languages, processes uploaded legal documents (notices, receipts, agreements, FIR copies) via Sarvam Vision OCR, streams real-time voice input via WebSockets, and drafts official, print-ready formal legal complaints (PDF) for police stations or consumer forums using a 2-step AI generation workflow.
 
 ---
 
-## 2. THE CORE WORKFLOWS & INTERACTION PIPELINES
+## 1. Project Overview & Core Emergency Legal Categories
 
-### 2.1 — Audio Dual-Path Interaction Pipeline
-To support low-literacy or regional-language-only users, NeethiMitra implements a voice-first dual path:
-```
-USER INPUT
+NeethiMitra AI is structured around **7 emergency legal categories** common to citizens needing immediate guidance:
+
+| # | Category | Target Audience / Use Cases | Key Legal Acts & Frameworks |
+|---|----------|-----------------------------|----------------------------|
+| 1 | **Cyber Fraud** | Scams, unauthorized bank debits, OTP fraud | IT Act 2000 (Sec 66C & 66D), National Cyber Crime Portal (1930) |
+| 2 | **Police & FIR** | Filing FIR, police harassment, arrest rights, bail | Bharatiya Nagarik Suraksha Sanhita (BNSS), CrPC, IPC |
+| 3 | **Land & Property** | Encroachment, boundary disputes, patta/chitta, illegal sale | Transfer of Property Act 1882, CPC Sec 80 |
+| 4 | **Domestic Violence & Family** | Abuse survivors, protection orders, maintenance | Protection of Women from Domestic Violence Act 2005 |
+| 5 | **Consumer Rights** | Defective goods, service fraud, warranty breach | Consumer Protection Act 2019, District Consumer Forum |
+| 6 | **Senior Citizen Protection** | Maintenance denial, eviction by heirs, elder abuse | Maintenance & Welfare of Parents and Senior Citizens Act 2007 |
+| 7 | **RTI & Government Services** | Public authority inaction, delayed services, information requests | Right to Information Act 2005 |
+
+---
+
+## 2. Core Operational Workflows & AI Pipelines
+
+### 2.1 — Real-Time Multilingual Voice & Text Pipeline
+NeethiMitra provides a seamless voice-first and text interaction pipeline supporting **11 Indian languages**:
+
+`
+USER INPUT (Text or 500ms Voice Chunks)
     │
-    ├─── [TEXT] ──→ Mayura Translation (Regional → English)
-    │                        │
-    └─── [VOICE] ──→ Saaras v3 STT (Translate Mode: Regional Voice → English Text)
-                             │
-                    ┌────────▼────────┐
-                    │  Legal AI Engine │  ← Context Injected from Sarvam Vision
-                    │  (English LLM)   │    (Extracted document text)
-                    └────────┬────────┘
-                             │ English Legal Advice / Response
-                    ┌────────▼────────┐
-                    │  Mayura         │ (Translate English → Regional Language)
-                    └────────┬────────┘
-                             │ Regional Response Text
-                    ┌────────▼────────┐
-                    │  Bulbul v3      │ (Generate .wav Audio File)
-                    └────────┬────────┘
-                             │
-USER OUTPUT: Regional text displayed on screen + Audio playback of response
-```
-*Enhancement:* When voice input is used, the backend translates the transcribed English query back to the user's preferred regional language using Mayura to display accurate transcriptions in their local chat history logs.
+    ├─── [TEXT QUERY] ─────────────┐
+    │                              ▼
+    └─── [WEBSOCKET /ws/stt] ──→ Saaras v3 STT (Language Auto-Detect, 16kHz Mono)
+                                   │
+                           Transcribed Query
+                                   │
+                                   ▼
+                    Mayura Translation (Regional → English Formal)
+                                   │
+                         English Legal Query
+                                   │
+                        ┌──────────▼──────────┐
+                        │  Legal AI Engine    │  ← Injected Context:
+                        │   (sarvam-30b)      │    - Last 10 conversation turns
+                        │                     │    - Sarvam Vision OCR markdown
+                        └──────────┬──────────┘
+                                   │ English Legal Advice (Domain-Tuned)
+                        ┌──────────▼──────────┐
+                        │  Mayura Translation │  (English → Regional Language)
+                        └──────────┬──────────┘
+                                   │ Regional Response Text
+                        ┌──────────▼──────────┐
+                        │  Bulbul v3 TTS      │  (Cleaned text via clean_for_tts regex,
+                        └──────────┬──────────┘   Speaker: "ishita", Pace: 0.95)
+                                   │
+USER OUTPUT: Regional text + Dual-Language Toggle (⇄ English) + Audio Playback (Bulbul v3 WAV)
+`
 
-### 2.2 — Document Digitization Sub-pipeline
-When a user uploads a document (bank statements, written notes, fraud screenshots), the backend processes it asynchronously using Sarvam Vision to extract structured Markdown and feeds it directly to the Legal AI Engine:
-```
-USER UPLOADS PDF/IMAGE
-    │
-    ▼
-FastAPI saves file locally to static/uploads/
-    │
-    ▼
-Sarvam Vision Job Pipeline (6-step async process)
-    │
-    ▼
-Extracted Markdown saved in DB under Document.extracted_text
-    │
-    ▼
-Injected into Legal AI context on subsequent user messages
-```
+### 2.2 — Document Digitization Pipeline (Sarvam Vision)
+When users upload documents (notices, receipts, contracts, bank statements), the backend executes an asynchronous 6-step job pipeline using Sarvam Vision:
+1. **Job Initialization**: Spawns job ID on Sarvam Vision API (/doc-digitization/job/v1).
+2. **Pre-signed URL Fetch**: Retrieves secure S3 upload URL.
+3. **Binary Storage**: Directly uploads file bytes (pplication/pdf, image/png, image/jpeg).
+4. **Processing Start**: Initiates digitization with output_format="markdown".
+5. **Async Polling**: Polls job state until "Completed".
+6. **Context Ingestion**: Saves extracted Markdown into PostgreSQL under documents.extracted_text and injects context into subsequent LLM chat turns.
 
----
-
-## 3. SARVAM AI MODEL SPECIFICATIONS (BACKEND INTEGRATION)
-
-### 3.1 — Saaras v3 (Speech-to-Text)
-Converts regional language voice recordings directly to English.
-* **Endpoint:** `POST https://api.sarvam.ai/speech-to-text`
-* **Headers:** `api-subscription-key: <KEY>`
-* **Payload Type:** `multipart/form-data`
-* **Key Fields:**
-  - `file`: The raw audio binary (WAV/MP3)
-  - `model`: `"saaras:v3"`
-  - `language_code`: BCP-47 regional code (e.g. `hi-IN`, `ta-IN`, `te-IN`, `kn-IN`)
-  - `mode`: `"translate"` (Directly outputs translated English text, omitting a translation step)
-* **Response Format:**
-  ```json
-  { "transcript": "The user's spoken words in English" }
-  ```
-
-### 3.2 — Mayura (Translation)
-Translates text between English and Indian regional languages.
-* **Endpoint:** `POST https://api.sarvam.ai/translate`
-* **Headers:** `api-subscription-key: <KEY>`, `Content-Type: application/json`
-* **Payload Format:**
-  ```json
-  {
-    "input": "Text to translate",
-    "source_language_code": "hi-IN",
-    "target_language_code": "en-IN"
-  }
-  ```
-* **Response Format:**
-  ```json
-  { "translated_text": "Translated output text" }
-  ```
-
-### 3.3 — Bulbul v3 (Text-to-Speech)
-Synthesizes regional text into realistic audio.
-* **Endpoint:** `POST https://api.sarvam.ai/text-to-speech`
-* **Headers:** `api-subscription-key: <KEY>`, `Content-Type: application/json`
-* **Payload Format:**
-  ```json
-  {
-    "text": "Text to convert (Max 500 characters)",
-    "target_language_code": "ta-IN",
-    "speaker": "shubh"  # or "ananya"
-  }
-  ```
-* **Response Format:**
-  ```json
-  {
-    "audios": ["<base64_encoded_wav_string>"]
-  }
-  ```
-* **Processing:** The base64 audio string is decoded and written as a binary file to `static/audio/tts_<uuid>.wav`, and the server returns the static asset URL.
-
-### 3.4 — Sarvam Vision (Document Digitization API)
-An asynchronous, job-based workflow designed to handle complex files (such as multi-page PDFs or image collections).
-
-1. **Step 1: Create Job**
-   - `POST https://api.sarvam.ai/doc-digitization/job/v1`
-   - Response: `{ "job_id": "job_uuid_here" }`
-2. **Step 2: Get Pre-signed Upload URL**
-   - `POST https://api.sarvam.ai/doc-digitization/job/v1/upload-files`
-   - Body: `{ "job_id": "job_uuid", "files": [{"file_name": "user_doc.pdf", "file_type": "pdf"}] }`
-   - Response: `{ "upload_urls": [{"file_name": "user_doc.pdf", "url": "<s3_upload_url>"}] }`
-3. **Step 3: Upload File**
-   - `PUT <s3_upload_url>`
-   - Body: raw file bytes, Header: `Content-Type: application/pdf` (or `image/png`/`image/jpeg`)
-4. **Step 4: Start Processing**
-   - `POST https://api.sarvam.ai/doc-digitization/job/v1/start`
-   - Body: `{ "job_id": "job_uuid", "output_format": "markdown" }`
-5. **Step 5: Poll Job Status**
-   - `GET https://api.sarvam.ai/doc-digitization/job/v1/status?job_id=job_uuid`
-   - Polled every 3 seconds (max 120s timeout). Wait until `job_state == "Completed"`.
-   - Response: `{ "job_state": "Completed", "output_files": ["user_doc_output.md"] }`
-6. **Step 6: Download Extracted Text**
-   - `POST https://api.sarvam.ai/doc-digitization/job/v1/download-files`
-   - Body: `{ "job_id": "job_uuid", "files": ["user_doc_output.md"] }`
-   - Response: `{ "download_urls": [{"file_name": "user_doc_output.md", "url": "<s3_download_url>"}] }`
-   - Fetch `<s3_download_url>` to retrieve the raw Markdown string.
+### 2.3 — 2-Step AI Complaint PDF Drafting Workflow
+1. **Extraction**: sarvam-30b analyzes session history and extracted document context to generate structured JSON containing facts, dates, accused party details, and legal sections.
+2. **Drafting**: sarvam-30b formats formal legal complaint prose based on the structured JSON.
+3. **PDF Generation**: ReportLab compiles the formal prose into a print-ready PDF with letterheads, subject lines, signature blocks, and verification hashes.
 
 ---
 
-## 4. TECHNICAL STACK & DEPENDENCIES
+## 3. Sarvam AI Model Configurations & Specifications
 
-### 4.1 — Backend Stack
-* **Framework:** FastAPI (Python 3.11+)
-* **Server:** Uvicorn
-* **Database:** SQLite (local development) / PostgreSQL (production deployment)
-* **ORM:** SQLAlchemy v2
-* **Migrations:** Alembic
-* **PDF Drafting:** ReportLab (Draws formal complaint layouts with header margins, subject line, body context, and unique signature verification hashes)
-* **Auth Support:** JWT (`python-jose`) + BCrypt (`passlib`) for secure onboarding (bypass active in development)
-* **HTTP Client:** `httpx` (async requests)
-
-### 4.2 — Frontend Stack
-* **Framework:** React Native + Expo SDK 56 (upgraded to work with latest Expo Go client)
-* **State Management:** Zustand (central store tracking current session, chat list, audio player states)
-* **Navigation:** Expo Router (tab-based navigation)
-* **Audio Playback:** `expo-av` (mobile playback support)
-* **File Uploads:** React Native `FormData` (transmits raw audio binaries/images to endpoints)
+| Function | Pinned Model | Endpoint | Parameters & Configuration |
+|---|---|---|---|
+| **Legal AI Reasoning** | sarvam-30b | /v1/chat/completions | Domain-aware easoning_effort (None for factual Q&A, "low" for property/police/cyber), 	emperature: 0.3, dynamic token budgets (450–800 max tokens). |
+| **Speech-to-Text** | saaras:v3 | /speech-to-text & /ws/stt | language_code="unknown" (auto-detect), mode="transcribe", WebSockets 500ms streaming timeslice, 16kHz mono audio input. |
+| **Translation** | mayura:v1 | /translate | mode="formal" for input, mode="modern-colloquial" for output. Pre-strips markdown symbols (##, **) to prevent garbled script. |
+| **Text-to-Speech** | ulbul:v3 | /text-to-speech | Default speaker: "ishita", pace: 0.95, enable_preprocessing: true. Custom clean_for_tts() pre-strips markdown, section marks (§, ¶), and double danda (॥ → ।). |
+| **Document OCR** | Sarvam Vision | /doc-digitization/job/v1 | Asynchronous 6-step pipeline producing clean Markdown formatting. |
 
 ---
 
-## 5. DATABASE SCHEMA & RELATIONSHIPS
+## 4. Resilience & Dual-Layer Rate Limiting Architecture
 
-The database consists of **7 tables** managed via SQLAlchemy:
+To prevent Sarvam API rate limit breaches (429 Too Many Requests) and protect against user quota abuse, NeethiMitra backend features a custom sliding-window rate limiter (pp/utils/rate_limiter.py):
 
-```mermaid
-erDiagram
-    users ||--o{ refresh_tokens : owns
-    users ||--o{ sessions : starts
-    users ||--o{ documents : uploads
-    sessions ||--o{ messages : logs
-    sessions ||--o{ documents : attaches
-    sessions ||--o{ complaints : generates
-    
-    users {
-        int id PK
-        string phone UNIQUE
-        string name
-        string hashed_password
-        string preferred_language
-        bool is_active
-        bool is_anonymous
-        datetime created_at
-    }
-    
-    sessions {
-        string id PK "UUID"
-        int user_id FK
-        string title
-        string category "Emergency category"
-        string language_code
-        bool is_active
-        datetime created_at
-    }
-    
-    messages {
-        int id PK
-        string session_id FK
-        string role "user / assistant"
-        text text_content "Regional text"
-        string original_language
-        string audio_url "Bulbul WAV path"
-        string input_type "text / voice"
-        datetime created_at
-    }
-    
-    documents {
-        int id PK
-        string session_id FK
-        int user_id FK
-        string filename
-        string file_path
-        string mime_type
-        int file_size_kb
-        string analysis_status "pending / completed / failed"
-        text extracted_text "Markdown from Sarvam Vision"
-        datetime created_at
-    }
-    
-    complaints {
-        int id PK
-        string session_id FK
-        string pdf_path
-        text draft_text
-        string category
-        string language_code
-        datetime created_at
-    }
-    
-    refresh_tokens {
-        int id PK
-        int user_id FK
-        string token UNIQUE
-        datetime expires_at
-        bool is_revoked
-        datetime created_at
-    }
-    
-    helplines {
-        int id PK
-        string category INDEX
-        string name
-        string number
-        string available_hours
-        string state
-    }
-```
+### 4.1 — Global Sarvam Account Limits (Starter Plan Buffer)
+- **LLM (sarvam-30b)**: 38 requests/min (Sarvam limit: 40/min)
+- **STT REST (saaras:v3)**: 58 requests/min (Sarvam limit: 60/min)
+- **STT Batch**: 18 requests/min (Sarvam limit: 20/min)
+- **TTS (ulbul:v3)**: 28 requests/min (Sarvam Starter limit: 30/min)
+- **Translation (mayura:v1)**: 58 requests/min (Sarvam limit: 60/min)
+
+### 4.2 — Per-User Policy Limits
+- **Guest Users**: Max 5 LLM / 10 STT / 5 TTS requests per minute.
+- **Authenticated Users**: Max 15 LLM / 30 STT / 15 TTS requests per minute.
+- **Eviction**: Automatic background cleanup task evicts idle user limiters after 5 minutes of inactivity.
+
+### 4.3 — Telemetry & Monitoring Dashboard
+- **Endpoint**: GET /api/internal/rate-limits (Protected via X-Monitor-Key header).
+- **Metrics**: Real-time capacity utilization %, active request counts, total calls, and average wait times in milliseconds.
 
 ---
 
-## 6. PROJECT DIRECTORY STRUCTURE
+## 5. Technical Stack & Architecture
 
-```
+### Backend Stack (
+eethimitra-backend/)
+* **Framework**: FastAPI (Python 3.11+)
+* **Server**: Uvicorn
+* **Database**: PostgreSQL (Production) / SQLite (Development) with SQLAlchemy 2.0 ORM
+* **Migrations**: Alembic
+* **Resilience**: 	enacity exponential backoff retries on external network calls
+* **PDF Engine**: ReportLab PDF library
+* **Authentication**: Google OAuth 2.0 + JWT Access Tokens (8h) & Refresh Tokens (30 days) + Guest Mode (3 free queries limit)
+
+### Frontend Stack (
+eethimitra/)
+* **Framework**: React Native + Expo SDK 56 (Universal codebase targeting Web Browsers, iOS, and Android)
+* **Routing**: Expo Router (file-system navigation)
+* **Desktop Shell**: WebAppShell.tsx featuring collapsible left sidebar, header status indicators, and responsive glassmorphic modal cards
+* **State Management**: Zustand persisted store (useAppStore.ts)
+* **Microphone Input**: Web MediaRecorder (500ms timeslice) / Expo Audio (Native)
+
+---
+
+## 6. Directory Structure
+
+`	ext
 NeethiMithra AI/
-├── neethimitra/               ← Frontend (Expo React Native App)
+├── neethimitra/               ← Frontend App (React Native / Expo)
 │   ├── app/
-│   │   ├── (tabs)/
-│   │   │   ├── index.tsx      ← Home (6 legal category cards)
-│   │   │   ├── chat-history.tsx ← Consultation log list
-│   │   │   ├── my-files.tsx   ← Uploaded documents library & scanner
-│   │   │   ├── speak.tsx      ← Voice recorder entry redirection
-│   │   │   └── profile.tsx    ← Settings (Theme, Language, Text Size)
-│   │   ├── (auth)/            ← Onboarding, Splash, Phone entry & OTP validation
+│   │   ├── (tabs)/            ← Dashboard, History, My Files, Profile
+│   │   ├── (auth)/            ← Onboarding, Phone OTP auth, Splash
 │   │   ├── chat/
-│   │   │   └── [category].tsx ← Conversational legal query chat interface
-│   │   └── _layout.tsx        ← Navigation wrapper & context provider
+│   │   │   └── [category].tsx ← Legal category chat screen
+│   │   └── _layout.tsx        ← Root router layout
 │   ├── src/
-│   │   ├── components/        ← UI overlays, home widgets, and WebAppShell wrapper
-│   │   ├── constants/         ← translations.ts (Master Static UI lookup)
-│   │   ├── store/
-│   │   │   └── useAppStore.ts ← Zustand store managing sessions and chats
-│   │   └── utils/             ← haptics.ts safe wrapper, etc.
+│   │   ├── components/        ← Overlays (RecordingOverlay, LanguagePicker), WebAppShell
+│   │   ├── store/             ← useAppStore.ts (Zustand state)
+│   │   └── constants/         ← translations.ts (Static 11-language UI strings)
 │   └── package.json
 │
-├── neethimitra-backend/       ← Backend (FastAPI API Server)
+├── neethimitra-backend/       ← Backend Server (FastAPI)
 │   ├── app/
-│   │   ├── core/
-│   │   │   ├── security.py    ← Passwords, tokens
-│   │   │   └── dependencies.py ← get_current_user dependency (with Dev Bypass)
-│   │   ├── routers/
-│   │   │   ├── auth.py        ← register, login, guest auth endpoints
-│   │   │   ├── sessions.py    ← CRUD for legal session folders
-│   │   │   ├── chat.py        ← Dual-path voice/text processing router
-│   │   │   ├── documents.py   ← Upload & digitize document route
-│   │   │   └── complaints.py  ← Create/Fetch complaint PDFs
-│   │   ├── services/
-│   │   │   ├── sarvam_stt.py  ← Saaras v3 STT helper
-│   │   │   ├── sarvam_translate.py ← Mayura translator helper
-│   │   │   ├── sarvam_tts.py  ← Bulbul v3 voice helper
-│   │   │   ├── sarvam_vision.py ← 6-step async document reader
-│   │   │   ├── legal_ai.py    ← Category-specific legal prompt engine
-│   │   │   └── pdf_generator.py ← ReportLab legal complaint builder
-│   │   ├── database.py        ← SQLAlchemy DB config
-│   │   ├── models.py          ← SQLAlchemy SQL models
-│   │   ├── schemas.py         ← Pydantic schemas (V2 format)
-│   │   └── config.py          ← Environment variables config
-│   ├── alembic/               ← DB migration scripts
-│   ├── static/                ← Hosted output media
-│   │   ├── audio/             ← Synthesized responses
-│   │   ├── uploads/           ← Document scans
-│   │   └── complaints/        ← Generated PDF reports
-│   ├── requirements.txt       ← Backend library list
-│   ├── alembic.ini            ← Alembic configurations
-│   └── .env                   ← Dev configurations (git-ignored)
-│
-├── render.yaml                ← Render blueprint deployment
-└── .gitignore                 ← Global project gitignore
-```
+│   │   ├── middleware/        ← rate_limit_deps.py (FastAPI dependencies)
+│   │   ├── utils/             ← rate_limiter.py (Sliding-window limiter)
+│   │   ├── routers/           ← auth, chat, documents, complaints, stt_ws, monitoring
+│   │   ├── services/          ← legal_ai, sarvam_stt, sarvam_tts, sarvam_translate, sarvam_vision, pdf_generator
+│   │   ├── models.py          ← SQLAlchemy database models
+│   │   ├── config.py          ← Settings & MODEL_CONFIG constants
+│   │   └── main.py            ← FastAPI entry point & lifespan manager
+│   ├── requirements.txt
+│   └── render.yaml            ← Render deployment blueprint
+`
 
 ---
 
-## 7. API ENDPOINT REFERENCE
+## 7. Key API Endpoints Reference
 
-All endpoints require JWT authorization unless specified as *None*.
-
-| Method | Endpoint | Auth | Description |
-|--------|----------|------|-------------|
-| **POST** | `/api/auth/register` | *None* | Register a phone number + password |
-| **POST** | `/api/auth/login` | *None* | Authenticate credentials → JWT Tokens |
-| **POST** | `/api/auth/guest` | *None* | Immediate anonymous session access |
-| **POST** | `/api/sessions` | JWT | Create a new legal folder session |
-| **GET** | `/api/sessions` | JWT | List active sessions, sorted newest first |
-| **GET** | `/api/sessions/{id}` | JWT | Fetch session, including full message logs |
-| **DELETE**| `/api/sessions/{id}` | JWT | Soft-delete a session (`is_active = False`) |
-| **POST** | `/api/sessions/{id}/messages` | JWT | Add voice/text message, processes AI response |
-| **POST** | `/api/sessions/{id}/documents` | JWT | Upload document, triggers async Sarvam Vision |
-| **POST** | `/api/sessions/{id}/complaint` | JWT | Draft case facts, compile to formal PDF |
-| **GET** | `/api/sessions/{id}/complaint` | JWT | Retrieve existing draft complaint details |
-| **GET** | `/static/audio/{file}` | *None* | Play synthesized speech WAV files |
-| **GET** | `/static/complaints/{file}` | *None* | View/Download legal complaint PDFs |
+| Method | Endpoint | Authorization | Description |
+|---|---|---|---|
+| **POST** | /api/auth/register | None | Register email/phone + password account |
+| **POST** | /api/auth/login | None | Authenticate credentials → JWT Tokens |
+| **POST** | /api/auth/google | None | Google OAuth ID Token login |
+| **POST** | /api/auth/guest | None | Spawns temporary anonymous guest session |
+| **POST** | /api/sessions | JWT / Guest | Create new legal folder session |
+| **GET** | /api/sessions | JWT / Guest | Fetch user's active legal sessions |
+| **POST** | /api/sessions/{id}/messages | Rate Limited | Send text query, run translation + legal AI reasoning |
+| **POST** | /api/sessions/{id}/messages/voice | Rate Limited | Upload REST voice recording, transcribe & run legal AI |
+| **WS** | /ws/stt | Rate Limited | Real-time WebSocket microphone streaming (500ms chunks) |
+| **POST** | /api/sessions/{id}/messages/{msg_id}/speak | Rate Limited | Synthesize Bulbul v3 TTS audio for any message |
+| **POST** | /api/sessions/{id}/documents | JWT / Guest | Upload document for async Sarvam Vision OCR |
+| **POST** | /api/sessions/{id}/complaint | JWT / Guest | Draft structured 2-step legal complaint PDF |
+| **GET** | /api/internal/rate-limits | X-Monitor-Key | Read real-time rate limit telemetry dashboard |
 
 ---
 
-## 8. KEY DEVELOPMENT & TESTING FEATURES
+## 8. Deployment & Execution Instructions
 
-### 8.1 — Dev Authentication Bypass
-To facilitate easy testing of core legal workflows without configuring JWT flows in client prototypes:
-* **Trigger:** Set `ENVIRONMENT=development` in `.env`.
-* **Behavior:** The `get_current_user` dependency automatically retrieves or creates a persistent developer profile (`User.id == 1`) and registers all transactions to it.
-* **Production Enforcing:** Setting `ENVIRONMENT=production` instantly activates JWT token verification checks for all routes.
-
-### 8.2 — Sarvam API Mock Pipeline Fallbacks
-If `SARVAM_API_KEY` is not supplied (remains at the placeholder `"PASTE_YOUR_SARVAM_API_KEY_HERE"`), all integration scripts degrade gracefully to mock mode to keep development unblocked:
-* **STT Fallback:** Returns a mock legal query transcription string.
-* **Translation Fallback:** Returns passthrough query strings or mock translated text.
-* **TTS Fallback:** Generates and writes a **valid silent PCM 16-bit WAV file** using Python's `struct.pack` so audio player plugins don't crash when testing.
-* **Vision Fallback:** Returns dummy parsed structured markdown tables from uploaded files.
-
----
-
-## 9. CONFIGURING ENVIRONMENT VARIABLES (`.env`)
-
-Create `.env` at `neethimitra-backend/.env` before running the backend:
-```env
-# Sarvam AI API Key (Set to placeholder for mock fallback testing)
-SARVAM_API_KEY=PASTE_YOUR_SARVAM_API_KEY_HERE
-
-# JWT Security
-SECRET_KEY=neethimitra_dev_secret_key_replace_in_production_32chars
-ALGORITHM=HS256
-ACCESS_TOKEN_EXPIRE_MINUTES=60
-REFRESH_TOKEN_EXPIRE_DAYS=30
-
-# Database
-DATABASE_URL=sqlite:///./neethimitra.db
-
-# Server Config
-ENVIRONMENT=development
-ALLOWED_ORIGINS=http://localhost:8081,http://localhost:8082,http://localhost:3000
-MAX_UPLOAD_SIZE_MB=10
-```
-
----
-
-## 10. LOCAL RUN & VERIFICATION COMMANDS
-
-Ensure your terminal working directory is `neethimitra-backend/` before executing commands:
-
-### 10.1 — Prepare Environment
-```powershell
-# Create venv
+### Local Development Setup
+`powershell
+# 1. Backend Setup
+cd neethimitra-backend
 python -m venv venv
-
-# Activate venv
 .\venv\Scripts\Activate.ps1
-
-# Install requirements
 pip install -r requirements.txt
-```
-
-### 10.2 — DB Migrations Setup
-```powershell
-# Verify migration status
-alembic current
-
-# Run/Apply database migrations
-alembic upgrade head
-```
-
-### 10.3 — Run Smoke Test
-Verify if all router packages and services compile without issues:
-```powershell
-python -c "from app.main import app; print('OK')"
-```
-
-### 10.4 — Run Uvicorn Development Server
-```powershell
 uvicorn app.main:app --reload --port 8000
-```
-* Interactive Swagger Docs: Go to `http://localhost:8000/docs`
-* API Root: `http://localhost:8000/`
 
----
+# 2. Frontend Setup
+cd ../neethimitra
+npm install
+npx expo start --web
+`
 
-## 11. DEPLOYMENT FLOWS (Render Blueprint)
-
-To host the FastAPI backend on Render, use the root-level [render.yaml](file:///d:/NeethiMithra AI/render.yaml) file:
-
-```yaml
-services:
-  - type: web
-    name: neethimitra-backend
-    runtime: python
-    buildCommand: pip install -r requirements.txt && alembic upgrade head
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port 10000
-    envVars:
-      - key: SARVAM_API_KEY
-        sync: false
-      - key: SECRET_KEY
-        sync: false
-      - key: DATABASE_URL
-        sync: false
-      - key: ENVIRONMENT
-        value: production
-```
-Ensure you bind the actual PostgreSQL string to `DATABASE_URL` and your secret API key to `SARVAM_API_KEY` in the Render dashboard environment variables setting.
+### Production Deployment (Render)
+The root ender.yaml automatically builds and deploys the backend with environment secrets (SARVAM_API_KEY, SECRET_KEY, DATABASE_URL).

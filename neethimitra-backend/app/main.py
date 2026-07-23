@@ -23,7 +23,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import ensure_storage_dirs, settings
-from app.routers import auth, chat, complaints, documents, files, helplines, monitoring, sessions, stt_ws
+from app.routers import auth, chat, complaints, documents, files, helplines, monitoring, sessions, stt_ws, voices
 from app.database import SessionLocal
 from app.services.helpline_seeder import seed_helplines
 from app.utils.rate_limiter import per_user_llm, per_user_stt, per_user_tts
@@ -127,7 +127,8 @@ app.include_router(complaints.router)
 app.include_router(helplines.router)
 app.include_router(files.router)
 app.include_router(monitoring.router)
-app.include_router(stt_ws.router)  # WebSocket STT streaming — /ws/stt
+app.include_router(stt_ws.router)   # WebSocket STT streaming — /ws/stt
+app.include_router(voices.router)   # Voice selection — /api/voices, /api/tts/test
 
 
 

@@ -17,7 +17,7 @@ from app.services.legal_ai import get_legal_response, normalise_to_11_lang, extr
 from app.services.sarvam_lid import detect_language
 from app.services.sarvam_stt import transcribe_audio
 from app.services.sarvam_translate import translate_text
-from app.services.sarvam_tts import synthesize_speech
+from app.services.sarvam_tts import synthesize_speech, get_speaker_for_user
 from app.services.session_support import build_session_event, mark_session_active
 from app.schemas import LegalInsights
 
@@ -485,12 +485,18 @@ async def speak_message(
 
     raw_lang = message.original_language or db_session.language_code or "en-IN"
     lang = normalise_to_11_lang(raw_lang)
-    logger.info("speak_message: synthesizing TTS for message_id=%d lang=%s (raw=%s)", message_id, lang, raw_lang)
+
+    # Resolve speaker: user preference → language default → system default
+    speaker = get_speaker_for_user(user=current_user, language_code=lang)
+    logger.info(
+        "speak_message: synthesizing TTS for message_id=%d lang=%s speaker=%s (raw_lang=%s)",
+        message_id, lang, speaker, raw_lang,
+    )
     t0 = time.time()
     # Always re-generate — Render free tier ephemeral disk wipes /static/audio/ on every
     # redeploy, so cached audio_url values become 404s after each deploy.
     # Re-generating on every tap is the only reliable approach on free hosting.
-    audio_url = await synthesize_speech(message.text_content, lang)
+    audio_url = await synthesize_speech(message.text_content, lang, speaker=speaker)
     logger.info("speak_message: synthesize_speech took %.2fs", time.time() - t0)
     message.audio_url = audio_url
     db.commit()

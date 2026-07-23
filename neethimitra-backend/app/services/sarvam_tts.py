@@ -1,4 +1,5 @@
 import base64
+import json
 import logging
 import os
 import re
@@ -141,6 +142,47 @@ def concatenate_wav_files(wav_chunks: list[bytes]) -> bytes:
 #          manan, sumit, kabir, aayan, shubh, ashutosh, advait, anand, tarun, sunny,
 #          gokul, vijay, mohit, rehan, soham
 DEFAULT_SPEAKER = "ishita"
+
+
+def get_speaker_for_user(user=None, language_code: str = "en-IN") -> str:
+    """
+    Resolve the Bulbul v3 speaker to use for a given user + language combination.
+
+    Resolution order:
+      1. User's saved preference for this language (voice_preferences JSON column)
+      2. Language default from LANGUAGE_DEFAULTS in voice_config.py
+      3. Hard-coded DEFAULT_SPEAKER ("ishita")
+
+    Args:
+        user: SQLAlchemy User ORM object (may be None for unauthenticated calls)
+        language_code: BCP-47 code of the session/response language
+    """
+    if user is not None:
+        raw_prefs = getattr(user, "voice_preferences", None)
+        if raw_prefs:
+            try:
+                prefs: dict = json.loads(raw_prefs)
+                saved = prefs.get(language_code)
+                if saved:
+                    logger.debug(
+                        "get_speaker_for_user: user_id=%s lang=%s → saved preference '%s'",
+                        user.id, language_code, saved,
+                    )
+                    return saved
+            except (ValueError, TypeError):
+                logger.warning("get_speaker_for_user: invalid JSON in voice_preferences for user_id=%s", user.id)
+
+    # Language-level default (best speaker for this language per voice_config.py)
+    from app.services.voice_config import get_default_voice
+    lang_default = get_default_voice(language_code, gender="female")
+    if lang_default:
+        logger.debug(
+            "get_speaker_for_user: lang=%s → language default '%s'",
+            language_code, lang_default,
+        )
+        return lang_default
+
+    return DEFAULT_SPEAKER
 
 
 async def synthesize_speech(text: str, target_language_code: str, speaker: str = DEFAULT_SPEAKER) -> str:

@@ -30,6 +30,12 @@ class User(Base):
     profile_image = Column(String, nullable=True)               # Google profile picture URL
     role = Column(String, default="user", nullable=False)        # "user"|"admin"|"guest"
 
+    # ── Voice preferences (added in migration 003) ─────────────────────────────
+    # JSON-serialised dict: {"hi-IN": "ishita", "ta-IN": "kavya", ...}
+    # Maps BCP-47 language codes to the user's chosen Bulbul v3 speaker name.
+    # Null = use system default from LANGUAGE_DEFAULTS in voice_config.py.
+    voice_preferences = Column(Text, nullable=True)              # JSON string or None
+
     sessions = relationship("Session", back_populates="user", cascade="all, delete-orphan")
     refresh_tokens = relationship("RefreshToken", back_populates="user", cascade="all, delete-orphan")
     session_events = relationship("SessionEvent", back_populates="user", cascade="all, delete-orphan")

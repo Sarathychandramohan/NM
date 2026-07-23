@@ -46,6 +46,11 @@ def strip_markdown_for_translation(text: str) -> str:
       4. Numbered list lines (1. 2. ...) → kept as "1) 2) ..."
       5. Excess blank lines / trailing whitespace collapsed
     """
+    # 0. Strip HTML tags (OCR output and some user inputs may contain HTML entities
+    #    that Mayura passes through verbatim, e.g. <b>, <br>, &nbsp;)
+    text = re.sub(r'<[^>]+>', '', text)
+    text = text.replace('&nbsp;', ' ').replace('&amp;', '&').replace('&lt;', '<').replace('&gt;', '>')
+
     # 1. ATX headings: "### Heading" → "Heading:"
     text = re.sub(r'^#{1,6}\s+(.+)$', r'\1:', text, flags=re.MULTILINE)
 
@@ -215,23 +220,31 @@ async def translate_text(
                 err_detail = f"Sarvam Translate returned {response.status_code}: {response.text}"
                 logger.error("translate_text: API error on chunk %d — %s", chunk_idx + 1, err_detail)
                 print(f"[translate_text] ERROR chunk {chunk_idx+1}: {err_detail}", flush=True)
-                raise RuntimeError(err_detail)
+                # Graceful fallback: return original chunk instead of crashing the pipeline.
+                # Legal chat remains usable in English even when Mayura fails on a chunk.
+                logger.warning(
+                    "translate_text: falling back to original text for chunk %d", chunk_idx + 1
+                )
+                translated_parts.append(chunk)
+                continue
 
             translated_parts.append(response.json().get("translated_text", chunk))
 
         except httpx.TimeoutException as exc:
             elapsed = time.time() - start_time
             msg = f"translate_text: chunk {chunk_idx+1} timed out after {elapsed:.1f}s"
-            print(f"[translate_text] TIMEOUT: {msg}", flush=True)
+            print(f"[translate_text] TIMEOUT: {msg} — falling back to original text", flush=True)
             logger.error(msg)
-            raise RuntimeError(msg) from exc
+            # Graceful fallback: timeout → use original chunk, don't crash the pipeline
+            translated_parts.append(chunk)
 
         except httpx.RequestError as exc:
             elapsed = time.time() - start_time
             msg = f"translate_text: network error on chunk {chunk_idx+1} after {elapsed:.1f}s — {exc}"
-            print(f"[translate_text] NETWORK ERROR: {msg}", flush=True)
+            print(f"[translate_text] NETWORK ERROR: {msg} — falling back to original text", flush=True)
             logger.error(msg)
-            raise RuntimeError(msg) from exc
+            # Graceful fallback: network error → use original chunk, don't crash the pipeline
+            translated_parts.append(chunk)
 
     result = " ".join(translated_parts)
     logger.info(

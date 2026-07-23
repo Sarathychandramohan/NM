@@ -2,6 +2,28 @@ from pydantic import BaseModel, EmailStr
 from typing import Optional, List
 from datetime import datetime
 
+
+# ─── LEGAL INSIGHTS ────────────────────────────────────────────────────────────
+
+class LegalInsights(BaseModel):
+    """
+    Structured legal intelligence extracted from the AI response.
+
+    Returned alongside every assistant message so the frontend can render
+    next_steps as tappable action cards, and relevant_laws as citation chips,
+    instead of relying on users to parse raw markdown prose.
+
+    All fields are Optional — if the AI response doesn't contain extractable
+    data for a field, it is omitted from the response JSON entirely.
+    """
+    next_steps: Optional[List[str]] = None      # Ordered action items the user should take
+    relevant_laws: Optional[List[str]] = None   # Cited acts, sections, and articles
+    legal_basis: Optional[str] = None           # Core legal principle the answer rests on
+    disclaimer: str = (
+        "This information is for general guidance only and does not constitute "
+        "legal advice. For specific legal issues, please consult a qualified advocate."
+    )
+
 # ─── AUTH ──────────────────────────────────────────────────────────────────────
 
 class UserCreate(BaseModel):
@@ -108,12 +130,14 @@ class MessageResponse(BaseModel):
     processing_status: str = "completed"
     error_message: Optional[str] = None
     meta_json: Optional[str] = None
+    insights: Optional[LegalInsights] = None   # Populated for assistant messages only
 
     model_config = {"from_attributes": True}
 
 class ChatResponse(BaseModel):
     user_message: MessageResponse
     assistant_message: MessageResponse
+    insights: Optional[LegalInsights] = None   # Top-level shortcut for easy frontend access
 
 # ─── SESSIONS ──────────────────────────────────────────────────────────────────
 

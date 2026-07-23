@@ -3,6 +3,7 @@ from app.agent.prompts import CATEGORY_SYSTEM_PROMPTS
 from app.config import settings
 import httpx
 import logging
+import re
 import time
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 from app.utils.rate_limiter import llm_limiter, stt_limiter
@@ -218,3 +219,91 @@ async def get_legal_response(
         max_tokens=max_tokens,
     )
     return resolved_category, response_text
+
+
+def extract_legal_insights(english_response: str) -> dict:
+    """
+    Lightweight post-processor: extract structured legal insights from an English LLM response.
+
+    Runs AFTER the LLM call, on the raw English text before it is translated.
+    Returns a dict matching the LegalInsights Pydantic schema (schemas.py).
+
+    Design principles:
+    - Never fabricates data: returns None for a field if no match found.
+    - Fast: pure regex, no API calls, runs in < 1ms.
+    - Conservative: only extracts high-confidence patterns (e.g. "Section X of Y Act").
+      Better to return fewer accurate results than many noisy ones.
+    """
+    # ── Next Steps ────────────────────────────────────────────────────────────
+    # Extracts numbered list items that typically follow "Steps:", "You should:",
+    # "What to do:", "Procedure:", or a plain numbered list anywhere in the response.
+    next_steps: list[str] | None = None
+    step_patterns = [
+        # Numbered list: "1. File an FIR" / "1) Visit the court"
+        r'^\s*(?:\d+[.)\-]|[a-zA-Z][.)\-])\s+(.{10,120})$',
+        # "Step N:" label
+        r'(?:Step\s+\d+|STEP\s+\d+)\s*[:\-]\s*(.{10,120})',
+        # Bullet list inside a "Next Steps" / "What to do" section
+        r'(?:next steps?|what (?:you can|to) do|recommended action|procedure)[:\s]*\n(?:[\s\S]*?)((?:[-•*]\s+.+\n?)+)',
+    ]
+    step_items: list[str] = []
+    # Primary: numbered list items
+    for line in english_response.splitlines():
+        m = re.match(r'^\s*(?:\d+[.)\-])\s+(.{10,150})$', line.strip())
+        if m:
+            step_text = m.group(1).strip().rstrip('.')
+            if step_text and step_text not in step_items:
+                step_items.append(step_text)
+    if step_items:
+        # Cap at 6 steps — avoid returning an entire numbered essay
+        next_steps = step_items[:6]
+
+    # ── Relevant Laws ────────────────────────────────────────────────────────
+    # Matches common Indian legal citation patterns:
+    # - "Section 498A of IPC"
+    # - "Article 21 of the Constitution"
+    # - "Section 12 of the Consumer Protection Act 2019"
+    # - "IPC Section 302" / "CrPC Section 154" (inverted order)
+    # - Short law name references: "IT Act", "RTI Act", "Protection of Women Act"
+    relevant_laws: list[str] | None = None
+    law_patterns = [
+        # "Section X of [the] Y [Act/Code/Law]"
+        r'(?:Section|Sec\.|Article|Rule|Clause)\s+[\w()A-Z/-]+\s+of\s+(?:the\s+)?[A-Z][A-Za-z\s&,()]{2,50}(?:Act|Code|Law|Rules?|Amendment|Ordinance)(?:\s+\d{4})?',
+        # Inverted: "IPC Section X" / "CrPC Section X"
+        r'(?:IPC|CrPC|CPC|CRPC|IT Act|RTI Act|POCSO|NDPS)\s+(?:Section|Sec\.)\s+[\w()A-Z/-]+',
+        # Short references: "the Consumer Protection Act" / "Domestic Violence Act 2005"
+        r'(?:the\s+)?[A-Z][A-Za-z\s&,()]{2,50}(?:Act|Code|Law|Rules?|Amendment)(?:\s+\d{4})?',
+    ]
+    found_laws: list[str] = []
+    for pattern in law_patterns:
+        for m in re.finditer(pattern, english_response):
+            law = m.group(0).strip()
+            # Filter noise: must be at least 6 chars and not already found
+            if len(law) >= 6 and law not in found_laws:
+                found_laws.append(law)
+    if found_laws:
+        # Deduplicate by checking if shorter match is substring of a longer one
+        deduped: list[str] = []
+        for law in found_laws:
+            if not any(law in longer for longer in found_laws if longer != law and len(longer) > len(law)):
+                deduped.append(law)
+        relevant_laws = deduped[:8]  # cap at 8 law references
+
+    # ── Legal Basis ──────────────────────────────────────────────────────────
+    # Extracts the first sentence that starts a legal reasoning statement.
+    legal_basis: str | None = None
+    basis_patterns = [
+        r'(?:Under|As per|According to|Pursuant to|In accordance with)\s+[A-Z].{20,200}?(?:[.!?])',
+        r'(?:The law|Indian law|The right|Your right|The court)\s+(?:states?|provides?|holds?|affirms?).{20,200}?(?:[.!?])',
+    ]
+    for pattern in basis_patterns:
+        m = re.search(pattern, english_response, re.IGNORECASE)
+        if m:
+            legal_basis = m.group(0).strip()
+            break
+
+    return {
+        "next_steps": next_steps,
+        "relevant_laws": relevant_laws,
+        "legal_basis": legal_basis,
+    }

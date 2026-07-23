@@ -13,12 +13,13 @@ from app.middleware.rate_limit_deps import check_llm_limit, check_stt_limit, che
 from app.models import Message, Session as DBSession, User
 
 from app.schemas import ChatResponse
-from app.services.legal_ai import get_legal_response, normalise_to_11_lang
+from app.services.legal_ai import get_legal_response, normalise_to_11_lang, extract_legal_insights
 from app.services.sarvam_lid import detect_language
 from app.services.sarvam_stt import transcribe_audio
 from app.services.sarvam_translate import translate_text
 from app.services.sarvam_tts import synthesize_speech
 from app.services.session_support import build_session_event, mark_session_active
+from app.schemas import LegalInsights
 
 logger = logging.getLogger(__name__)
 
@@ -142,6 +143,21 @@ async def _process_and_respond(
     logger.info("get_legal_response (LLM) took %.2fs — category=%s response_len=%d",
                 time.time() - t0, resolved_category, len(english_response))
 
+    # Extract structured legal insights from the English response (pure regex, <1ms, no API call).
+    # Runs before translation so patterns match English citations reliably.
+    raw_insights = extract_legal_insights(english_response)
+    insights = LegalInsights(
+        next_steps=raw_insights.get("next_steps"),
+        relevant_laws=raw_insights.get("relevant_laws"),
+        legal_basis=raw_insights.get("legal_basis"),
+    ) if any(v for v in raw_insights.values()) else None
+    logger.info(
+        "extract_legal_insights: next_steps=%s laws=%s basis=%s",
+        len(raw_insights.get("next_steps") or []),
+        len(raw_insights.get("relevant_laws") or []),
+        bool(raw_insights.get("legal_basis")),
+    )
+
     # Update session metadata (store the original session_language, not the normalised one,
     # so the UI continues to show the user's original language preference)
     db_session.category = resolved_category
@@ -240,7 +256,7 @@ async def _process_and_respond(
         "_process_and_respond COMPLETE — total=%.2fs session_id=%s",
         time.time() - t_start, session_id,
     )
-    return {"user_message": user_msg, "assistant_message": ai_msg}
+    return {"user_message": user_msg, "assistant_message": ai_msg, "insights": insights}
 
 
 @router.post("/{session_id}/messages", response_model=ChatResponse, dependencies=[Depends(check_llm_limit)])

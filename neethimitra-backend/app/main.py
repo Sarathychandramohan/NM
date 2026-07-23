@@ -34,9 +34,45 @@ logger.info("main.py: logging is now configured — this line proves it")
 
 
 
+def _ensure_db_schema_sync():
+    """
+    Automatic DDL migration guard on app startup.
+    Ensures missing columns (such as users.voice_preferences) are added to
+    PostgreSQL on Render even if alembic migration hasn't been executed yet,
+    preventing 500/ProgrammingError crashes during Google OAuth and queries.
+    """
+    from sqlalchemy import inspect, text
+    from app.database import engine
+    from app.models import Base
+
+    try:
+        inspector = inspect(engine)
+        tables = inspector.get_table_names()
+
+        if "users" in tables:
+            columns = [c["name"] for c in inspector.get_columns("users")]
+            with engine.connect() as conn:
+                if "voice_preferences" not in columns:
+                    logger.info("db_schema_sync: Adding missing column 'voice_preferences' to 'users' table")
+                    conn.execute(text("ALTER TABLE users ADD COLUMN voice_preferences TEXT;"))
+                    conn.commit()
+
+        # Create any missing tables (e.g. api_keys)
+        Base.metadata.create_all(bind=engine)
+        logger.info("db_schema_sync: Database schema synchronization completed successfully")
+    except Exception as exc:
+        logger.error("db_schema_sync: Schema synchronization failed (non-fatal): %s", exc)
+
+
 @asynccontextmanager
 async def lifespan(app_instance):
     """Startup/shutdown tasks run once on cold start."""
+    # ── Database Schema Auto-Migration Guard ─────────────────────────────────
+    try:
+        _ensure_db_schema_sync()
+    except Exception as exc:
+        logger.error("lifespan: schema sync error: %s", exc)
+
     # Seed national helplines so the helplines page is never empty
     try:
         db = SessionLocal()

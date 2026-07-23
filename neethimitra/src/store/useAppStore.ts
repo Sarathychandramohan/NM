@@ -73,6 +73,13 @@ export function getTextScale(textSize: 'small' | 'medium' | 'large'): number {
   return 1.0;
 }
 
+export type LegalInsights = {
+  next_steps?: string[];
+  relevant_laws?: string[];
+  legal_basis?: string;
+  disclaimer?: string;
+};
+
 export type Message = {
   id: string;
   role: 'user' | 'assistant';
@@ -81,6 +88,7 @@ export type Message = {
   audioUri?: string;
   isVoice?: boolean;
   timestamp: Date;
+  insights?: LegalInsights;
 };
 
 export type Session = {
@@ -499,6 +507,7 @@ export const useAppStore = create<AppState>()(
               englishTranslation: data.assistant_message.english_translation,
               audioUri: data.assistant_message.audio_url ? `${API_BASE_URL}${data.assistant_message.audio_url}` : undefined,
               timestamp: new Date(data.assistant_message.created_at),
+              insights: data.insights || undefined,
             };
             set((s) => {
               if (!s.activeSession) return s;

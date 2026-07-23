@@ -105,6 +105,55 @@ export default function ProfileScreen() {
       ],
     },
     {
+      section: 'Developer & Security',
+      items: [
+        {
+          label: 'Programmatic API Keys',
+          Icon: Shield,
+          onPress: async () => {
+            const { authToken } = useAppStore.getState();
+            if (!authToken) {
+              showAlert('Login Required', 'Please sign in to generate programmatic API keys.');
+              return;
+            }
+            try {
+              const res = await apiClient('/api/security/keys', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${authToken}` },
+                body: JSON.stringify({ description: 'Mobile App Access Key' }),
+              });
+              if (res.ok) {
+                const data = await res.json();
+                showAlert('API Key Generated', `Your API Key:\n\n${data.api_key}\n\nKeep it secure; it will not be displayed again.`);
+              } else {
+                showAlert('Error', 'Could not generate API key.');
+              }
+            } catch (err: any) {
+              showAlert('Error', err.message || 'API key generation failed.');
+            }
+          },
+          right: <ChevronRight size={15} color={C.textHint} strokeWidth={1.5} />
+        },
+        {
+          label: 'Standard Legal Templates',
+          Icon: Scale,
+          onPress: async () => {
+            try {
+              const res = await apiClient('/api/workflows/templates');
+              if (res.ok) {
+                const templates = await res.json();
+                const names = Object.values(templates).map((t: any) => `• ${t.name}`).join('\n');
+                showAlert('Legal Templates Available', `Standardized Forms:\n\n${names}`);
+              }
+            } catch {
+              showAlert('Legal Templates', '• Legal Aid Application (Sec 12 SALSA)\n• Court Notice Summons Verification\n• Domestic Violence Petition\n• Cyber Crime Incident Report');
+            }
+          },
+          right: <ChevronRight size={15} color={C.textHint} strokeWidth={1.5} />
+        },
+      ],
+    },
+    {
       section: t.aboutLegal || 'About & Legal',
       items: [
         {

@@ -229,6 +229,70 @@ function MessageBubble({
             {item.text}
           </Text>
 
+          {/* ── Structured Legal Insights (Priority P1 Enhancement) ──────── */}
+          {item.insights && (
+            <View style={{ marginTop: 10, gap: 8 }}>
+              {/* Relevant Laws Chips */}
+              {item.insights.relevant_laws && item.insights.relevant_laws.length > 0 && (
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
+                  {item.insights.relevant_laws.map((law, lIdx) => (
+                    <View
+                      key={lIdx}
+                      style={{
+                        backgroundColor: isDarkMode ? '#1F2937' : '#EFF6FF',
+                        borderColor: '#3B82F6',
+                        borderWidth: 1,
+                        paddingHorizontal: 8,
+                        paddingVertical: 3,
+                        borderRadius: 12,
+                      }}
+                    >
+                      <Text style={{ fontSize: 10 * scale, color: '#2563EB', fontFamily: 'PlusJakartaSans_600SemiBold' }}>
+                        ⚖ {law}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              {/* Next Steps Action Cards */}
+              {item.insights.next_steps && item.insights.next_steps.length > 0 && (
+                <View style={{
+                  backgroundColor: isDarkMode ? '#1E1E23' : '#FFF7ED',
+                  borderColor: Colors.orange + '40',
+                  borderWidth: 1,
+                  borderRadius: 12,
+                  padding: 10,
+                  gap: 6,
+                }}>
+                  <Text style={{ fontSize: 11 * scale, fontFamily: 'PlusJakartaSans_700Bold', color: Colors.orange }}>
+                    📋 Recommended Next Actions:
+                  </Text>
+                  {item.insights.next_steps.map((step, sIdx) => (
+                    <Text key={sIdx} style={{ fontSize: 12 * scale, color: C.text, fontFamily: 'PlusJakartaSans_500Medium', lineHeight: 17 }}>
+                      • {step}
+                    </Text>
+                  ))}
+                </View>
+              )}
+
+              {/* Legal Basis Callout */}
+              {item.insights.legal_basis && (
+                <View style={{
+                  backgroundColor: isDarkMode ? '#142018' : '#F0FDF4',
+                  borderColor: '#16A34A40',
+                  borderWidth: 1,
+                  borderRadius: 10,
+                  padding: 8,
+                }}>
+                  <Text style={{ fontSize: 11 * scale, color: '#16A34A', fontFamily: 'PlusJakartaSans_600SemiBold', lineHeight: 16 }}>
+                    💡 Legal Basis: {item.insights.legal_basis}
+                  </Text>
+                </View>
+              )}
+            </View>
+          )}
+
           {/* Translation panel — plain text, same color as primary, no italic */}
           {showTranslation && hasTranslation && (
             <View style={{ gap: 6, marginTop: 6 }}>
